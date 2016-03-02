@@ -34,6 +34,19 @@ Kuryr Specs
 
    specs/index
 
+
+Downstream Features
+===================
+
+In order to disrupt as little as possible the Kuryr upstream documentation effort with changes
+introduced to document Midokura's downstream extra features, the downstream documentation is added
+as a separate document tree.
+
+.. toctree::
+  :maxdepth: 1
+
+  midokura/index
+
 Indices and tables
 ==================
 
