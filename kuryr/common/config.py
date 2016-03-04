@@ -89,12 +89,24 @@ binding_opts = [
                      'container.'))
 ]
 
+raven_opts = [
+    cfg.StrOpt('logfile_path',
+               default='/var/log/kuryr/raven.log'),
+]
+
+k8s_opts = [
+    cfg.StrOpt('api_root',
+               default='http://localhost:8080'),
+]
+
 
 CONF = cfg.CONF
 CONF.register_opts(core_opts)
 CONF.register_opts(neutron_opts, group='neutron_client')
 CONF.register_opts(keystone_opts, group='keystone_client')
 CONF.register_opts(binding_opts, 'binding')
+CONF.register_opts(raven_opts, 'raven')
+CONF.register_opts(k8s_opts, 'k8s')
 
 
 def init(args, **kwargs):
