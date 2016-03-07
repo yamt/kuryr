@@ -13,6 +13,7 @@
 
 import ddt
 
+from kuryr.raven import raven
 from kuryr.raven import watchers
 from kuryr.tests.unit import base
 
@@ -63,3 +64,28 @@ class TestWatchers(base.TestKuryrBase):
         self.assertIsNotNone(Watcher.WATCH_ENDPOINT)
         self.assertTrue(callable(Watcher.translate))
         Watcher()
+
+    def test_register_watchers(self):
+        """``register_watchers`` injects ``WATCH_ENDPOINT`` and ``translate``.
+
+        ``register_watchers`` should inject ``WATCH_ENDPOINT`` attribute (or
+        property) and ``translate`` method of the given class into the class
+        which is the target of it.
+        """
+        class DoNothingWatcher(object):
+            WATCH_ENDPOINT = '/watch_me'
+
+            def translate(self, deserialized_json):
+                pass
+        DoNothingWatcher()
+
+        @raven.register_watchers(DoNothingWatcher)
+        class Foo(object):
+            pass
+        Foo()
+
+        self.assertIsNotNone(Foo.WATCH_ENDPOINTS_AND_CALLBACKS)
+        self.assertEqual(1, len(Foo.WATCH_ENDPOINTS_AND_CALLBACKS))
+        self.assertEqual(DoNothingWatcher.translate,
+                         Foo.WATCH_ENDPOINTS_AND_CALLBACKS[
+                             DoNothingWatcher.WATCH_ENDPOINT])
