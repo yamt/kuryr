@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+
+from kuryr.cni.driver import run_driver
+import sys
+
+# According to CNI spec, all the arguments to call
+# the driver come through environment variables
+try:
+    print(run_driver())
+except Exception as e:
+    print(e.message)
+    sys.exit(3)
