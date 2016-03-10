@@ -146,9 +146,14 @@ def _cache_default_subnetpool_ids(app):
         app.DEFAULT_POOL_IDS = frozenset(default_subnetpool_id_set)
 
 
-def _get_networks_by_attrs(**attrs):
+def _get_networks_by_attrs(unique=True, **attrs):
+    """Returns an iterable of the networks with matching attrs
+
+    Raises a DuplicatedResourceException if `unique` is requested and there is
+    more than a single network match
+    """
     networks = app.neutron.list_networks(**attrs)
-    if len(networks.get('networks', [])) > 1:
+    if unique and len(networks.get('networks', [])) > 1:
         raise exceptions.DuplicatedResourceException(
             "Multiple Neutron networks exist for the params {0}"
             .format(', '.join(['{0}={1}'.format(k, v)
@@ -156,19 +161,35 @@ def _get_networks_by_attrs(**attrs):
     return networks['networks']
 
 
-def _get_subnets_by_attrs(**attrs):
+def _get_subnets_by_attrs(unique=True, **attrs):
+    """Returns an iterable of the subnets with matching attrs
+
+    Raises a DuplicatedResourceException if `unique` is requested and there is
+    more than a single IPv4/IPv6 pair(same net id) of subnets that match attrs
+    """
     subnets = app.neutron.list_subnets(**attrs)
-    if len(subnets.get('subnets', [])) > 2:  # subnets for IPv4 and/or IPv6
-        raise exceptions.DuplicatedResourceException(
-            "Multiple Neutron subnets exist for the params {0} "
-            .format(', '.join(['{0}={1}'.format(k, v)
-                               for k, v in attrs.items()])))
+    # subnets for IPv4 and/or IPv6
+    resp_len = len(subnets.get('subnets', []))
+    if unique:
+        if resp_len > 2:
+            raise exceptions.DuplicatedResourceException(
+                "Multiple Neutron subnets exist for the params {0} "
+                .format(', '.join(['{0}={1}'.format(k, v)
+                                   for k, v in attrs.items()])))
+        elif resp_len == 2:
+            sub_a, sub_b = subnets['subnets']
+            if (sub_a['ip_version'] == sub_b['ip_version'] or
+                    sub_a['network_id'] != sub_b['network_id']):
+                raise exceptions.DuplicatedResourceException(
+                    "Multiple Neutron subnets exist for the params {0} "
+                    .format(', '.join(['{0}={1}'.format(k, v)
+                                       for k, v in attrs.items()])))
     return subnets['subnets']
 
 
-def _get_ports_by_attrs(**attrs):
+def _get_ports_by_attrs(unique=True, **attrs):
     ports = app.neutron.list_ports(**attrs)
-    if len(ports.get('ports', [])) > 1:
+    if unique and len(ports.get('ports', [])) > 1:
         raise exceptions.DuplicatedResourceException(
             "Multiple Neutron ports exist for the params {0} "
             .format(', '.join(['{0}={1}'.format(k, v)
@@ -176,9 +197,9 @@ def _get_ports_by_attrs(**attrs):
     return ports['ports']
 
 
-def _get_subnetpools_by_attrs(**attrs):
+def _get_subnetpools_by_attrs(unique=True, **attrs):
     subnetpools = app.neutron.list_subnetpools(**attrs)
-    if len(subnetpools.get('subnetpools', [])) > 1:
+    if unique and len(subnetpools.get('subnetpools', [])) > 1:
         raise exceptions.DuplicatedResourceException(
             "Multiple Neutron subnetspool exist for the params {0} "
             .format(', '.join(['{0}={1}'.format(k, v)
