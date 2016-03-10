@@ -12,14 +12,27 @@
 # limitations under the License.
 
 import abc
+import asyncio
 
+from neutronclient.common import exceptions as n_exceptions
 from oslo_log import log
+from oslo_serialization import jsonutils
+import requests
 import six
 
+from kuryr._i18n import _LE
 from kuryr.common import config
+from kuryr.common import constants
+
 
 K8S_API_ENDPOINT_BASE = config.CONF.k8s.api_root
 K8S_API_ENDPOINT_V1 = K8S_API_ENDPOINT_BASE + '/api/v1'
+LOG = log.getLogger(__name__)
+
+ADDED_EVENT = 'ADDED'
+DELETED_EVENT = 'DELETED'
+MODIFIED_EVENT = 'MODIFIED'
+
 LOG = log.getLogger(__name__)
 
 
@@ -163,8 +176,53 @@ class K8sPodsWatcher(K8sAPIWatcher):
     PODS_ENDPOINT = K8S_API_ENDPOINT_V1 + '/pods'
     WATCH_ENDPOINT = PODS_ENDPOINT + '?watch=true'
 
+    @asyncio.coroutine
     def translate(self, decoded_json):
         LOG.debug("Pod notification {0}".format(decoded_json))
+        event_type = decoded_json.get('type', '')
+        content = decoded_json.get('object', {})
+        metadata = content.get('metadata', {})
+        if event_type == ADDED_EVENT:
+            new_port = {
+                'name': metadata.get('name', ''),
+                'network_id': self._network['id'],
+                'admin_state_up': True,
+                'device_owner': constants.DEVICE_OWNER,
+                'fixed_ips': [{'subnet_id': self._subnet['id']}]
+            }
+            try:
+                created_port = yield from self.delegate(
+                    self.neutron.create_port, {'port': new_port})
+                port = created_port['port']
+                LOG.debug("Successfully create a port {}.".format(port))
+            except n_exceptions.NeutronClientException as ex:
+                LOG.error(_LE("Error happened during creating a"
+                              " Neutron port: {0}").format(ex))
+                raise
+            path = metadata.get('selfLink', '')
+            annotations = metadata.get('annotations', {})
+            annotations.update(
+                {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(port)})
+            annotations.update(
+                {constants.K8S_ANNOTATION_SUBNETS_KEY: jsonutils.dumps(
+                    [self._subnet])})
+            if path:
+                data = {
+                    "kind": "Pod",
+                    "apiVersion": "v1",
+                }
+                metadata = {}
+                metadata.update({'annotations': annotations})
+                data.update({'metadata': metadata})
+                headers = {
+                    'Content-Type': 'application/merge-patch+json',
+                    'Accept': 'application/json',
+                }
+                response = yield from self.delegate(
+                    requests.patch, K8S_API_ENDPOINT_BASE + path,
+                    data=jsonutils.dumps(data), headers=headers)
+                assert response.status_code == requests.codes.ok
+                LOG.debug("Successfully updated the annotations.")
 
 
 class K8sServicesWatcher(K8sAPIWatcher):

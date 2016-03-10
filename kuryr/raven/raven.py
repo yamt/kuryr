@@ -13,6 +13,7 @@
 
 import asyncio
 import collections
+import functools
 import signal
 import sys
 import traceback
@@ -193,6 +194,29 @@ class Raven(service.Service):
     def wait(self):
         LOG.debug('Wait for the service: {0}'.format(self.__class__.__name__))
         super(Raven, self).wait()
+
+    @asyncio.coroutine
+    def delegate(self, func, *args, **kwargs):
+        """Delegates the execution of the passed function to this instance.
+
+        The passed function or the method is executed immediately in the
+        different thread. This provides the generic abstraction for making the
+        synchrounized processe asynchronous.
+
+        :param func:   The function or the method to be executed.
+        :param args:   The arguments for the function, which can be the mixutre
+                       of the regular arguments and the arbitrary arguments
+                       passed to the function.
+        :param kwargs: The keyword arguments passed to the function.
+        :returns: The result of the passed function with the arguments.
+        """
+        # run_in_executor of the event loop can't take the keyword args. So
+        # all arguments are bound with functools.partial and create a new
+        # function that takes no argument here.
+        partiall_applied_func = functools.partial(func, *args, **kwargs)
+        result = yield from self._event_loop.run_in_executor(
+            None, partiall_applied_func)
+        return result
 
     @asyncio.coroutine
     def watch(self, endpoint, callback):
