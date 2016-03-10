@@ -24,12 +24,16 @@ import requests
 
 from kuryr._i18n import _LE
 from kuryr.common import config
+from kuryr import controllers
 from kuryr.raven.aio import headers
 from kuryr.raven.aio import methods
 from kuryr.raven import watchers
 
 
 LOG = log.getLogger(__name__)
+
+HARDCODED_NET_NAME = 'raven-default'
+HARDCODED_CIDR = '172.17.42.0/24'
 
 
 def register_watchers(*watchers):
@@ -73,7 +77,7 @@ class Raven(service.Service):
     the events into the creations, deletions or updates of Neutron resources.
     """
     # TODO(tfukushima): Initialize the global neutronclient here.
-    neutron = None
+    neutron = controllers.get_neutron_client()
     # For unit tests this is the ordered dictionary.
     WATCH_ENDPOINTS_AND_CALLBACKS = collections.OrderedDict()
 
@@ -82,6 +86,37 @@ class Raven(service.Service):
         self._event_loop = asyncio.new_event_loop()
         self._tasks = None
         assert not self._event_loop.is_closed()
+
+    def _ensure_networking_base(self):
+        networks = controllers._get_networks_by_attrs(
+            unique=False, name=HARDCODED_NET_NAME)
+        if networks:
+            network = networks[0]
+            LOG.debug('Reusing the existing network {0}'.format(network))
+        else:
+            network_response = self.neutron.create_network(
+                {'network': {'name': HARDCODED_NET_NAME}})
+            network = network_response['network']
+            LOG.debug('Created a new network {0}'.format(network))
+        self._network = network
+        subnets = controllers._get_subnets_by_attrs(
+            unique=False, cidr=HARDCODED_CIDR)
+        if subnets:
+            subnet = subnets[0]
+            LOG.debug('Reusing the existing subnet {0}'.format(subnet))
+        else:
+            new_subnet = {
+                'name': HARDCODED_NET_NAME + '-' + HARDCODED_CIDR,
+                'network_id': network['id'],
+                'ip_version': 4,
+                'cidr': HARDCODED_CIDR,
+                'enable_dhcp': False,
+            }
+            subnet_response = self.neutron.create_subnet(
+                {'subnet': new_subnet})
+            subnet = subnet_response['subnet']
+            LOG.debug('Created a new subnet {0}'.format(subnet))
+        self._subnet = subnet
 
     def restart(self):
         LOG.debug('Restarted the service: {0}'.format(self.__class__.__name__))
@@ -93,6 +128,7 @@ class Raven(service.Service):
         super(Raven, self).start()
         LOG.debug('Watched endpoints: {0}'
                   .format(self.WATCH_ENDPOINTS_AND_CALLBACKS))
+        self._ensure_networking_base()
         try:
             futures = [
                 asyncio.async(self.watch(
