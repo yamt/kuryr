@@ -67,6 +67,10 @@ class TestRaven(base.TestKuryrBase):
     def test_wait(self):
         """Checks if the service stops correctly with the noop watch."""
         r = raven.Raven()
+        self.mox.StubOutWithMock(r, '_ensure_networking_base')
+        r._ensure_networking_base()
+
+        self.mox.ReplayAll()
         _inject_watch(r, _noop)
         self.assertFalse(r._event_loop.is_closed())
         launch = service.launch(config.CONF, r)
@@ -77,6 +81,10 @@ class TestRaven(base.TestKuryrBase):
     def test_signals(self, sig):
         """Checks if the service stops when it received SIGINT and SIGTERM."""
         r = raven.Raven()
+        self.mox.StubOutWithMock(r, '_ensure_networking_base')
+        r._ensure_networking_base()
+
+        self.mox.ReplayAll()
         _inject_watch(r, _spin)
         self.assertFalse(r._event_loop.is_closed())
         launcher = service.launch(config.CONF, r)
@@ -88,8 +96,94 @@ class TestRaven(base.TestKuryrBase):
     def test_simplified_watch(self):
         """Checks if Raven works if the watch method just returns JSON data."""
         r = raven.Raven()
+        self.mox.StubOutWithMock(r, '_ensure_networking_base')
+        r._ensure_networking_base()
+
+        self.mox.ReplayAll()
         _inject_watch(r, _simplified_watch)
         self.assertFalse(r._event_loop.is_closed())
         launcher = service.launch(config.CONF, r)
         launcher.wait()
         self.assertTrue(r._event_loop.is_closed())
+
+    def test__ensure_networking_base_not_set(self):
+        """Check that it creates net/subnet when none are reported"""
+        r = raven.Raven()
+
+        self.mox.StubOutWithMock(raven.controllers, '_get_networks_by_attrs')
+        self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
+        self.mox.StubOutWithMock(r.neutron, 'create_network')
+        self.mox.StubOutWithMock(r.neutron, 'create_subnet')
+
+        raven.controllers._get_networks_by_attrs(
+            unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([])
+        raven.controllers._get_subnets_by_attrs(
+            unique=False, cidr=raven.HARDCODED_CIDR).AndReturn([])
+
+        net_id = '73b7056d-ff6a-450c-9d1b-da222b910330'
+        subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
+        tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
+        r.neutron.create_network(
+            {'network': {'name': raven.HARDCODED_NET_NAME}}).AndReturn(
+                {'network': {
+                    'name': raven.HARDCODED_NET_NAME,
+                    'subnets': [],
+                    'admin_state_up': False,
+                    'shared': False,
+                    'status': 'ACTIVE',
+                    'tenant_id': tenant_id,
+                    'id': net_id}})
+        r.neutron.create_subnet(
+            {'subnet': {
+                'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
+                                         raven.HARDCODED_CIDR),
+                'network_id': net_id,
+                'ip_version': 4,
+                'cidr': raven.HARDCODED_CIDR,
+                'enable_dhcp': False}}).AndReturn(
+                    {'subnet': {
+                        'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
+                                         raven.HARDCODED_CIDR),
+                        'network_id': net_id,
+                        'tenant_id': tenant_id,
+                        'cidr': raven.HARDCODED_CIDR,
+                        'id': subnet_id,
+                        'enable_dhcp': True}})
+
+        self.mox.ReplayAll()
+        r._ensure_networking_base()
+
+    def test__ensure_networking_base_noop(self):
+        """Check that it creates net/subnet when nothing needs to be done"""
+        r = raven.Raven()
+
+        self.mox.StubOutWithMock(raven.controllers, '_get_networks_by_attrs')
+        self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
+        self.mox.StubOutWithMock(r.neutron, 'create_network')
+        self.mox.StubOutWithMock(r.neutron, 'create_subnet')
+
+        net_id = '73b7056d-ff6a-450c-9d1b-da222b910330'
+        subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
+        tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
+
+        raven.controllers._get_networks_by_attrs(
+            unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([{
+                'status': 'ACTIVE',
+                'subnets': [subnet_id],
+                'name': raven.HARDCODED_NET_NAME,
+                'admin_state_up': True,
+                'tenant_id': tenant_id,
+                'id': net_id,
+                'shared': False}])
+        raven.controllers._get_subnets_by_attrs(
+            unique=False, cidr=raven.HARDCODED_CIDR).AndReturn([{
+                        'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
+                                         raven.HARDCODED_CIDR),
+                        'network_id': net_id,
+                        'tenant_id': tenant_id,
+                        'cidr': raven.HARDCODED_CIDR,
+                        'id': subnet_id,
+                        'enable_dhcp': True}])
+
+        self.mox.ReplayAll()
+        r._ensure_networking_base()
