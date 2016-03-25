@@ -30,6 +30,7 @@ IFF_UP = 0x1  # The last bit represents if the interface is up
 IP_ADDRESS_KEY = 'ip_address'
 KIND_VETH = 'veth'
 MAC_ADDRESS_KEY = 'mac_address'
+NETNS_PREFIX = '/var/run/netns/'
 SUBNET_ID_KEY = 'subnet_id'
 UNBINDING_SUBCOMMAND = 'unbind'
 VETH_POSTFIX = '-veth'
@@ -97,14 +98,40 @@ def cleanup_veth(ifname):
         return None
 
 
-def port_bind(endpoint_id, neutron_port, neutron_subnets):
+def _make_up_veth(peer_veth, neutron_port, neutron_subnets,
+                  container_ifname=None):
+    """Sets the container side of the veth pair with link and addressing"""
+    if container_ifname:
+        peer_veth.ifname = container_ifname
+    subnets_dict = {subnet['id']: subnet for subnet in neutron_subnets}
+    fixed_ips = neutron_port.get(FIXED_IP_KEY, [])
+    if not fixed_ips and (IP_ADDRESS_KEY in neutron_port):
+        peer_veth.add_ip(neutron_port[IP_ADDRESS_KEY])
+    for fixed_ip in fixed_ips:
+        if IP_ADDRESS_KEY in fixed_ip and (SUBNET_ID_KEY in fixed_ip):
+            subnet_id = fixed_ip[SUBNET_ID_KEY]
+            subnet = subnets_dict[subnet_id]
+            cidr = netaddr.IPNetwork(subnet['cidr'])
+            peer_veth.add_ip(fixed_ip[IP_ADDRESS_KEY], cidr.prefixlen)
+    peer_veth.address = neutron_port[MAC_ADDRESS_KEY].lower()
+    if not _is_up(peer_veth):
+        peer_veth.up()
+
+
+def port_bind(endpoint_id, neutron_port, neutron_subnets,
+              ifname='', netns=None):
     """Binds the Neutron port to the network interface on the host.
+
+    When netns is specifed, it will set up the namespace for the container
+    networking.
 
     :param endpoint_id:     the ID of the endpoint as string
     :param neutron_port:    a port dictionary returned from
                             python-neutronclient
     :param neutron_subnets: a list of all subnets under network to which this
                             endpoint is trying to join
+    :param ifname:          the name of the interface put inside the netns
+    :param netns:           the path to the netns
     :returns: the tuple of the names of the veth pair and the tuple of stdout
               and stderr returned by processutils.execute invoked with the
               executable script for binding
@@ -112,35 +139,43 @@ def port_bind(endpoint_id, neutron_port, neutron_subnets):
              processutils.ProcessExecutionError
     """
     ip = get_ipdb()
-
+    container_ifname = ifname
     ifname = endpoint_id[:8] + VETH_POSTFIX
     peer_name = ifname + CONTAINER_VETH_POSTFIX
-    subnets_dict = {subnet['id']: subnet for subnet in neutron_subnets}
 
     try:
+        if netns is not None:
+            pid = netns.split('/')[2]
+            netns_symlink_path = NETNS_PREFIX + pid
+            if not os.path.exists(NETNS_PREFIX):
+                os.mkdir(NETNS_PREFIX)
+            if not os.path.exists(netns_symlink_path):
+                os.symlink(netns, netns_symlink_path)
         with ip.create(ifname=ifname, kind=KIND_VETH,
                        reuse=True, peer=peer_name) as host_veth:
             if not _is_up(host_veth):
                 host_veth.up()
         with ip.interfaces[peer_name] as peer_veth:
-            fixed_ips = neutron_port.get(FIXED_IP_KEY, [])
-            if not fixed_ips and (IP_ADDRESS_KEY in neutron_port):
-                peer_veth.add_ip(neutron_port[IP_ADDRESS_KEY])
-            for fixed_ip in fixed_ips:
-                if IP_ADDRESS_KEY in fixed_ip and (SUBNET_ID_KEY in fixed_ip):
-                    subnet_id = fixed_ip[SUBNET_ID_KEY]
-                    subnet = subnets_dict[subnet_id]
-                    cidr = netaddr.IPNetwork(subnet['cidr'])
-                    peer_veth.add_ip(fixed_ip[IP_ADDRESS_KEY], cidr.prefixlen)
-            peer_veth.address = neutron_port[MAC_ADDRESS_KEY].lower()
-            if not _is_up(peer_veth):
-                peer_veth.up()
+            _make_up_veth(peer_veth, neutron_port, neutron_subnets)
+        if netns:
+            with ip.interfaces[peer_name] as peer_veth:
+                peer_veth.net_ns_fd = pid
+            if container_ifname:
+                ipdb_ns = pyroute2.IPDB(nl=pyroute2.NetNS(pid))
+                try:
+                    with ipdb_ns.by_name[peer_name] as peer_veth:
+                        _make_up_veth(peer_veth, neutron_port, neutron_subnets)
+                finally:
+                    ipdb_ns.release()
     except pyroute2.ipdb.common.CreateException:
         raise exceptions.VethCreationFailure(
             'Creating the veth pair was failed.')
     except pyroute2.ipdb.common.CommitException:
         raise exceptions.VethCreationFailure(
             'Could not configure the veth endpoint for the container.')
+    finally:
+        if netns and os.path.exists(netns_symlink_path):
+            os.remove(netns_symlink_path)
 
     vif_type = neutron_port.get(VIF_TYPE_KEY, FALLBACK_VIF_TYPE)
     binding_exec_path = os.path.join(config.CONF.bindir, vif_type)
