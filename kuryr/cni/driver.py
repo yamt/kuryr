@@ -138,8 +138,11 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
 
         info = models.CNIInfo()
         cidr = netaddr.IPNetwork(neutron_subnets[0]['cidr'])
-        port_ip = '/'.join([pod_annotations['NEUTRON_IP'],
-                            str(cidr.prefixlen)])
+        ip_address = neutron_port.get('ip_address', '')
+        fixed_ips = neutron_port.get('fixed_ips', [])
+        if not ip_address and fixed_ips:
+            ip_address = fixed_ips[0].get('ip_address', '')
+        port_ip = '/'.join([ip_address, str(cidr.prefixlen)])
         gateway_ip = neutron_subnets[0]['gateway_ip']
         info.set_ipv4_info(ip=port_ip, gateway=gateway_ip)
         LOG.debug(str(info))
