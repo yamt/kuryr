@@ -78,8 +78,10 @@ class CNIInfo(object):
 
         info_ipv4 = {}
         info_ipv4['ip'] = self.ipv4_ip
-        info_ipv4['gateway'] = self.ipv4_gateway
-        info_ipv4['routes'] = self.ipv4_routes
+        if self.ipv4_gateway:
+            info_ipv4['gateway'] = self.ipv4_gateway
+        if self.ipv4_routes:
+            info_ipv4['routes'] = self.ipv4_routes
         info['ip4'] = info_ipv4
 
         # info_ipv6 = {}
@@ -89,10 +91,14 @@ class CNIInfo(object):
         # info['ip6'] = info_ipv6
 
         info_dns = {}
-        info_dns['nameservers'] = self.dns_nameservers
-        info_dns['domain'] = self.dns_domain
-        info_dns['search'] = self.dns_search
-        info_dns['options'] = self.dns_options
+        if self.dns_nameservers:
+            info_dns['nameservers'] = self.dns_nameservers
+        if self.dns_domain:
+            info_dns['domain'] = self.dns_domain
+        if self.dns_search:
+            info_dns['search'] = self.dns_search
+        if self.dns_options:
+            info_dns['options'] = self.dns_options
         info['dns'] = info_dns
 
         return jsonutils.dumps(info)
