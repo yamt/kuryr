@@ -116,10 +116,13 @@ class TestRaven(base.TestKuryrBase):
         self.mox.StubOutWithMock(r.neutron, 'create_subnet')
 
         subnet_cidr = config.CONF.k8s.cluster_subnet
+        service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
         raven.controllers._get_networks_by_attrs(
             unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([])
         raven.controllers._get_subnets_by_attrs(
             unique=False, cidr=subnet_cidr).AndReturn([])
+        raven.controllers._get_subnets_by_attrs(
+            unique=False, cidr=service_subnet_cidr).AndReturn([])
 
         net_id = '73b7056d-ff6a-450c-9d1b-da222b910330'
         subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
@@ -150,6 +153,15 @@ class TestRaven(base.TestKuryrBase):
                         'cidr': subnet_cidr,
                         'id': subnet_id,
                         'enable_dhcp': True}})
+        new_service_subnet = {
+            'name': '-'.join([raven.HARDCODED_NET_NAME, service_subnet_cidr]),
+            'network_id': net_id,
+            'ip_version': 4,
+            'cidr': service_subnet_cidr,
+            'enable_dhcp': False
+        }
+        r.neutron.create_subnet({'subnet': new_service_subnet}).AndReturn(
+            {'subnet': new_service_subnet})
 
         self.mox.ReplayAll()
         r._ensure_networking_base()
@@ -168,6 +180,7 @@ class TestRaven(base.TestKuryrBase):
         tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
 
         subnet_cidr = config.CONF.k8s.cluster_subnet
+        service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
         raven.controllers._get_networks_by_attrs(
             unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([{
                 'status': 'ACTIVE',
@@ -186,6 +199,15 @@ class TestRaven(base.TestKuryrBase):
                         'cidr': subnet_cidr,
                         'id': subnet_id,
                         'enable_dhcp': True}])
+        service_subnet = {
+            'name': '-'.join([raven.HARDCODED_NET_NAME, service_subnet_cidr]),
+            'network_id': net_id,
+            'ip_version': 4,
+            'cidr': subnet_cidr,
+            'enable_dhcp': False
+        }
+        raven.controllers._get_subnets_by_attrs(
+            unique=False, cidr=service_subnet_cidr).AndReturn([service_subnet])
 
         self.mox.ReplayAll()
         r._ensure_networking_base()
