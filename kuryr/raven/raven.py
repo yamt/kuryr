@@ -17,6 +17,7 @@ import signal
 import sys
 import traceback
 
+import netaddr
 from oslo_log import log
 from oslo_serialization import jsonutils
 from oslo_service import service
@@ -118,6 +119,29 @@ class Raven(service.Service):
             subnet = subnet_response['subnet']
             LOG.debug('Created a new subnet {0}'.format(subnet))
         self._subnet = subnet
+
+        service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
+        service_subnets = controllers._get_subnets_by_attrs(
+            unique=False, cidr=service_subnet_cidr)
+        if service_subnets:
+            service_subnet = service_subnets[0]
+            LOG.debug('Reusing the existing service subnet {0}'
+                      .format(service_subnet))
+        else:
+            ip = netaddr.IPNetwork(service_subnet_cidr)
+            new_service_subnet = {
+                'name': HARDCODED_NET_NAME + '-' + service_subnet_cidr,
+                'network_id': network['id'],
+                'ip_version': ip.version,
+                'cidr': service_subnet_cidr,
+                'enable_dhcp': False,
+            }
+            service_subnet_response = self.neutron.create_subnet(
+                {'subnet': new_service_subnet})
+            service_subnet = service_subnet_response['subnet']
+            LOG.debug('Created a new service subnet {0}'
+                      .format(service_subnet))
+        self.service_subnet = service_subnet
 
     def restart(self):
         LOG.debug('Restarted the service: {0}'.format(self.__class__.__name__))

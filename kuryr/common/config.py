@@ -104,6 +104,12 @@ k8s_opts = [
     cfg.StrOpt('cluster_subnet',
                default=os.environ.get(
                    'FLANNEL_NET', '172.16.0.0/16')),
+    # NOTE(tfukushima): SERVICE_CLUSTER_IP_RANGE is used in the deployment
+    #   scripts.
+    # https://github.com/kubernetes/kubernetes/search?utf8=%E2%9C%93&q=SERVICE_CLUSTER_IP_RANGE&type=Code  # noqa
+    cfg.StrOpt('cluster_service_subnet',
+               default=os.environ.get(
+                   'SERVICE_CLUSTER_IP_RANGE', '192.168.3.0/24')),
 ]
 
 
