@@ -33,7 +33,6 @@ from kuryr.raven import watchers
 LOG = log.getLogger(__name__)
 
 HARDCODED_NET_NAME = 'raven-default'
-HARDCODED_CIDR = '172.17.42.0/24'
 
 
 def register_watchers(*watchers):
@@ -99,17 +98,19 @@ class Raven(service.Service):
             network = network_response['network']
             LOG.debug('Created a new network {0}'.format(network))
         self._network = network
+        subnet_cidr = config.CONF.k8s.cluster_subnet
         subnets = controllers._get_subnets_by_attrs(
-            unique=False, cidr=HARDCODED_CIDR)
+            unique=False, cidr=subnet_cidr)
         if subnets:
             subnet = subnets[0]
             LOG.debug('Reusing the existing subnet {0}'.format(subnet))
         else:
+            ip = netaddr.IPNetwork(subnet_cidr)
             new_subnet = {
-                'name': HARDCODED_NET_NAME + '-' + HARDCODED_CIDR,
+                'name': HARDCODED_NET_NAME + '-' + subnet_cidr,
                 'network_id': network['id'],
-                'ip_version': 4,
-                'cidr': HARDCODED_CIDR,
+                'ip_version': ip.version,
+                'cidr': subnet_cidr,
                 'enable_dhcp': False,
             }
             subnet_response = self.neutron.create_subnet(
