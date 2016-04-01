@@ -196,10 +196,9 @@ class Raven(service.Service):
 
     @asyncio.coroutine
     def watch(self, endpoint, callback):
-        response = yield from methods.get(
-            endpoint=endpoint,
-            loop=self._event_loop,
-            decoder=lambda x: jsonutils.loads(x.decode('utf8')))
+        response = yield from methods.get(endpoint=endpoint,
+                                          loop=self._event_loop,
+                                          decoder=_utf8_decoder)
 
         # Get headers
         status, reason, hdrs = yield from response.read_headers()
@@ -224,7 +223,21 @@ class Raven(service.Service):
                 LOG.debug('Watch task of endpoint {} has arrived at EOF'
                     .format(endpoint))
                 break
-            callback(content)
+            if asyncio.iscoroutinefunction(callback):
+                task = callback(content)
+            else:
+                task = self._event_loop.run_in_executor(
+                    None, callback, content)
+
+            try:
+                yield from task
+            except asyncio.CancelledError:
+                LOG.debug('Watching endpoint %s was cancelled during callback'
+                          'callback execution.', endpoint)
+
+
+def _utf8_decoder(content):
+    return jsonutils.loads(content.decode('utf8'))
 
 
 def run_raven():

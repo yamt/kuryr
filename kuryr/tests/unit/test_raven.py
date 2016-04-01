@@ -10,9 +10,8 @@
 # implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-
 import asyncio
+import collections
 import os
 import signal
 
@@ -56,6 +55,27 @@ def _simplified_watch(self, endpoint, callback):
 
 def _inject_watch(raven, alternative_watch):
     raven.watch = alternative_watch.__get__(raven, raven.__class__)
+
+
+class _FakeResponse(object):
+    def __init__(self, content):
+        self._content = content
+
+    @asyncio.coroutine
+    def read_line(self):
+        if self._content:
+            return self._content.popleft()
+        else:
+            return None
+
+    @asyncio.coroutine
+    def read_headers(self):
+        return 200, 'OK', {raven.headers.TRANSFER_ENCODING: 'chunked'}
+
+
+@asyncio.coroutine
+def _fake_get_response(responses):
+    return _FakeResponse(responses)
 
 
 @ddt.ddt
@@ -105,6 +125,53 @@ class TestRaven(base.TestKuryrBase):
         launcher = service.launch(config.CONF, r)
         launcher.wait()
         self.assertTrue(r._event_loop.is_closed())
+
+    @ddt.data(asyncio.coroutine,  # Coroutine
+              lambda x: x)  # Non-coroutine
+    def test_watch_cb(self, wrapper):
+        """Checks if Raven can asynchronously execute callbacks
+
+        Since mox does not support coroutines, for testing when the callback
+        is a coroutine, we make a real coroutine out of `_callback` with the
+        wrapper. `_callback` then calls a simple method called
+        `response_checker` and we prepare the replay with it.
+        """
+        endpoint = 'test_endpoint'
+
+        watcher_callback = self.mox.CreateMockAnything()
+        response_checker = self.mox.CreateMockAnything()
+
+        def _callback(content):
+            response_checker(content)
+
+        callback = wrapper(_callback)
+
+        responses = collections.deque(({'foo': 'bar'},
+                     {1: '1', 2: '2'},
+                     {'kind': 'Pod', 'metadata': {}}))
+
+        r = raven.Raven()
+        r.WATCH_ENDPOINTS_AND_CALLBACKS = {
+            endpoint: watcher_callback
+        }
+
+        self.mox.StubOutWithMock(r, '_ensure_networking_base')
+        r._ensure_networking_base()
+
+        self.mox.StubOutWithMock(raven.methods, 'get')
+        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+                          decoder=raven._utf8_decoder).AndReturn(
+                          _fake_get_response(responses))
+
+        watcher_callback.__get__(r, r.__class__).AndReturn(callback)
+
+        for response in responses:
+            response_checker(response)
+
+        self.mox.ReplayAll()
+        launcher = service.launch(config.CONF, r)
+        launcher.wait()
+        self.mox.VerifyAll()
 
     def test__ensure_networking_base_not_set(self):
         """Check that it creates net/subnet when none are reported"""
