@@ -52,7 +52,10 @@ class K8sAPIWatcher(object):
         this method to have the concrete translation logic for the specific
         one or more resources.
 
-        :param deserialized_json: the deserialized JSON resopnse from the
+        This method may be a coroutine function, a decorated generator function
+        or an ``async def`` function.
+
+        :param deserialized_json: the deserialized JSON resoponse from the
                                   apiserver
         """
         pass
