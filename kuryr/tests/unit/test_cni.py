@@ -17,6 +17,7 @@ from oslo_serialization import jsonutils
 
 from kuryr.cni import constants as cni_const
 from kuryr.cni import driver
+from kuryr.common import config
 from kuryr.common import constants
 from kuryr.raven import raven
 from kuryr.tests.unit import base
@@ -105,7 +106,7 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
         tenant_id = '39dd23d1-7d7c-4586-a105-bc6f84f9a769'
         port_id = '7a12ebf0-ed19-4819-94cd-150acf9f5c1f'
 
-        net = netaddr.IPNetwork(raven.HARDCODED_CIDR)
+        net = netaddr.IPNetwork(config.CONF.k8s.cluster_subnet)
         port_ip = str(netaddr.IPAddress(net.first + 11))
         gateway_ip = str(netaddr.IPAddress(net.first + 1))
 
