@@ -95,6 +95,8 @@ class Response(object):
         result = yield from self._reader.readchunk()
         if result == b'' and self._reader.at_eof():
             result = None
+            if self._writer.can_write_eof():
+                self._writer.write_eof()
             self._writer.close()
         return result
 
@@ -125,6 +127,8 @@ class Response(object):
                 chunk = yield from self._reader.readchunk()
                 if chunk == b'' and self._reader.at_eof():
                     result = None
+                    if self._writer.can_write_eof():
+                        self._writer.write_eof()
                     self._writer.close()
                     break
                 if self._remainder:
