@@ -12,6 +12,7 @@
 # limitations under the License.
 import asyncio
 import collections
+import itertools
 import os
 import signal
 
@@ -151,6 +152,7 @@ class TestRaven(base.TestKuryrBase):
                      {'kind': 'Pod', 'metadata': {}}))
 
         r = raven.Raven()
+        r._reconnect = False
         r.WATCH_ENDPOINTS_AND_CALLBACKS = {
             endpoint: watcher_callback
         }
@@ -232,6 +234,131 @@ class TestRaven(base.TestKuryrBase):
 
         self.mox.ReplayAll()
         r._ensure_networking_base()
+
+    def test_watch_reconnect(self):
+        """Checks if Raven can reconnect to an endpoint when it gets EOF
+
+        Since mox does not support coroutines, for testing when the callback
+        is a coroutine, we make a real coroutine out of `_callback` with the
+        wrapper. `_callback` then calls a simple method called
+        `response_checker` and we prepare the replay with it.
+        """
+        endpoint = 'test_endpoint'
+
+        watcher_callback = self.mox.CreateMockAnything()
+        response_checker = self.mox.CreateMockAnything()
+
+        first_responses = collections.deque(
+            ({'foo': 'bar'},
+             {1: '1', 2: '2'},
+             {'kind': 'Pod', 'metadata': {}}))
+
+        final_responses = collections.deque(
+            ({'foo': 'barbarian'},
+             {1: '1', 2: '2', 'stop_reconnecting': True},
+             {'kind': 'service', 'metadata': {}}))
+
+        r = raven.Raven()
+        r._reconnect = True
+        r.WATCH_ENDPOINTS_AND_CALLBACKS = {
+            endpoint: watcher_callback
+        }
+
+        @asyncio.coroutine
+        def callback(content):
+            response_checker(content)
+            if content.get('stop_reconnecting'):
+                r._reconnect = False
+
+        self.mox.StubOutWithMock(r, '_ensure_networking_base')
+        r._ensure_networking_base()
+
+        self.mox.StubOutWithMock(raven.methods, 'get')
+        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+                          decoder=raven._utf8_decoder).AndReturn(
+                          _fake_get_response(first_responses))
+
+        # We'll reconnect once
+        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+                          decoder=raven._utf8_decoder).AndReturn(
+                          _fake_get_response(final_responses))
+
+        watcher_callback.__get__(r, r.__class__).AndReturn(callback)
+
+        for response in itertools.chain(first_responses, final_responses):
+            response_checker(response)
+
+        self.mox.ReplayAll()
+        launcher = service.launch(config.CONF, r)
+        launcher.wait()
+        self.mox.VerifyAll()
+
+    def test_watch_ignore_repeated_events(self):
+        """Checks that Raven does not use the callback with repeated events
+
+        Since mox does not support coroutines, for testing when the callback
+        is a coroutine, we make a real coroutine out of `_callback` with the
+        wrapper. `_callback` then calls a simple method called
+        `response_checker` and we prepare the replay with it.
+
+        In this case, we check that when the second response is sending already
+        seen events, we ignore them when deciding to execute the callback.
+        """
+        endpoint = 'test_endpoint'
+
+        watcher_callback = self.mox.CreateMockAnything()
+        response_checker = self.mox.CreateMockAnything()
+
+        first_responses = collections.deque(
+            ({'foo': 'bar'},
+             {1: '1', 2: '2'},
+             {'kind': 'Pod', 'metadata': {}}))
+
+        final_responses = collections.deque(
+            ({1: '1', 2: '2'},  # Repeated
+             {'kind': 'Pod', 'metadata': {}},  # Repeated
+             {'foo': 'barbarian'},
+             {1: '1', 2: '2', 'stop_reconnecting': True},
+             {'kind': 'service', 'metadata': {}}))
+
+        r = raven.Raven()
+        r._reconnect = True
+        r.WATCH_ENDPOINTS_AND_CALLBACKS = {
+            endpoint: watcher_callback
+        }
+
+        @asyncio.coroutine
+        def callback(content):
+            response_checker(content)
+            if content.get('stop_reconnecting'):
+                r._reconnect = False
+
+        self.mox.StubOutWithMock(r, '_ensure_networking_base')
+        r._ensure_networking_base()
+
+        self.mox.StubOutWithMock(raven.methods, 'get')
+        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+                          decoder=raven._utf8_decoder).AndReturn(
+                          _fake_get_response(first_responses))
+
+        # We'll reconnect once
+        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+                          decoder=raven._utf8_decoder).AndReturn(
+                          _fake_get_response(final_responses))
+
+        watcher_callback.__get__(r, r.__class__).AndReturn(callback)
+
+        processed = set()
+        for response in itertools.chain(first_responses, final_responses):
+            textual_response = str(response)
+            if textual_response not in processed:
+                processed.add(textual_response)
+                response_checker(response)
+
+        self.mox.ReplayAll()
+        launcher = service.launch(config.CONF, r)
+        launcher.wait()
+        self.mox.VerifyAll()
 
     def test__ensure_networking_base_noop(self):
         """Check that it creates net/subnet when nothing needs to be done"""

@@ -14,6 +14,7 @@
 import asyncio
 import collections
 import functools
+import hashlib
 import signal
 import sys
 import traceback
@@ -25,6 +26,8 @@ from oslo_service import service
 import requests
 
 from kuryr._i18n import _LE
+from kuryr._i18n import _LI
+from kuryr.common import collections as k_collections
 from kuryr.common import config
 from kuryr import controllers
 from kuryr.raven.aio import headers
@@ -85,7 +88,9 @@ class Raven(service.Service):
     def __init__(self):
         super(Raven, self).__init__()
         self._event_loop = asyncio.new_event_loop()
-        self._tasks = None
+        self._event_cache = k_collections.Cache()
+        self._tasks = {}
+        self._reconnect = True
         assert not self._event_loop.is_closed()
 
     def _ensure_networking_base(self):
@@ -144,6 +149,13 @@ class Raven(service.Service):
                       .format(service_subnet))
         self.service_subnet = service_subnet
 
+    def _task_done_callback(self, task):
+        endpoint = self._tasks.pop(task)
+        LOG.info(_LI('Finished watcher for endpoint "%s"'), endpoint)
+        if not self._tasks:
+            LOG.info(_LI('No more tasks to handle. Shutting down...'))
+            self.stop()
+
     def restart(self):
         LOG.debug('Restarted the service: {0}'.format(self.__class__.__name__))
         super(Raven, self).restart()
@@ -155,39 +167,44 @@ class Raven(service.Service):
         LOG.debug('Watched endpoints: {0}'
                   .format(self.WATCH_ENDPOINTS_AND_CALLBACKS))
         self._ensure_networking_base()
+
+        for endpoint, callback in self.WATCH_ENDPOINTS_AND_CALLBACKS.items():
+            task = self._event_loop.create_task(self.watch(
+                endpoint, callback.__get__(self, Raven)))
+            task.add_done_callback(self._task_done_callback)
+            self._tasks[task] = endpoint
+
+        self._event_loop.add_signal_handler(
+            signal.SIGTERM, self.stop)
+        self._event_loop.add_signal_handler(
+            signal.SIGINT, self.stop)
         try:
-            futures = [
-                asyncio.async(self.watch(
-                    endpoint, callback.__get__(self, Raven)),
-                    loop=self._event_loop)
-                for endpoint, callback in
-                self.WATCH_ENDPOINTS_AND_CALLBACKS.items()]
-            self._tasks = asyncio.gather(*futures, loop=self._event_loop)
-            self._event_loop.add_signal_handler(
-                signal.SIGTERM, self._tasks.cancel)
-            self._event_loop.add_signal_handler(
-                signal.SIGINT, self._tasks.cancel)
-            self._event_loop.run_until_complete(self._tasks)
+            self._event_loop.run_forever()
         except Exception as e:
             LOG.error(_LE('Caught the exception in the event loop: {0}')
                       .format(e))
             LOG.error(traceback.format_exc())
-            self._event_loop.close()
-            sys.exit(1)
+            err_code = 1
         else:
-            self._event_loop.close()
-            sys.exit(0)
+            err_code = 0
+        finally:
+            if not self._event_loop.is_closed():
+                self._event_loop.run_until_complete(
+                    asyncio.gather(*asyncio.Task.all_tasks(
+                        loop=self._event_loop)))
+                self._event_loop.close()
+            sys.exit(err_code)
 
     def stop(self, graceful=False):
         """Stops the event loop if it's not stopped already."""
-        if hasattr(self, '_tasks') and (not self._tasks.done()):
-            self._tasks.cancel()
-            self._tasks.exception()
-            self._event_loop.run_forever()
+        if hasattr(self, '_tasks') and self._tasks:
+            LOG.info(_LI('Cancelling all the scheduled tasks'))
+            for task, endpoint in self._tasks.items():
+                LOG.info(_LI('Cancelling the watcher for "%s"'), endpoint)
+                task.cancel()
         if self._event_loop.is_running():
             self._event_loop.stop()
-        if not self._event_loop.is_closed():
-            self._event_loop.close()
+
         super(Raven, self).stop(graceful)
         LOG.debug('Stopped the service: {0}'.format(self.__class__.__name__))
 
@@ -246,18 +263,41 @@ class Raven(service.Service):
             if content is None:
                 LOG.debug('Watch task of endpoint {} has arrived at EOF'
                     .format(endpoint))
-                break
-            if asyncio.iscoroutinefunction(callback):
-                task = callback(content)
-            else:
-                task = self._event_loop.run_in_executor(
-                    None, callback, content)
 
-            try:
-                yield from task
-            except asyncio.CancelledError:
-                LOG.debug('Watching endpoint %s was cancelled during callback'
-                          'callback execution.', endpoint)
+                # Let's schedule another watch
+                if self._reconnect:
+                    next_watch = self._event_loop.create_task(self.watch(
+                        endpoint, callback))
+                    next_watch.add_done_callback(self._task_done_callback)
+                    self._tasks[next_watch] = endpoint
+                break
+            else:
+                hashed_content = hashlib.md5(str(content).encode()).hexdigest()
+                if hashed_content in self._event_cache:
+                    LOG.info(_LI(
+                        'Event with content "%(content)r" already seen at loop'
+                        ' time "%(old_time)s". Current loop time '
+                        '"%(new_time)s". Skipping this already processed '
+                        'event...'),
+                        {'content': content,
+                         'old_time': self._event_cache[hashed_content],
+                         'new_time': self._event_loop.time()})
+                    continue
+
+                self._event_cache[hashed_content] = self._event_loop.time()
+
+                if asyncio.iscoroutinefunction(callback):
+                    task = callback(content)
+                else:
+                    task = self._event_loop.run_in_executor(
+                        None, callback, content)
+
+                try:
+                    yield from task
+                except asyncio.CancelledError:
+                    LOG.debug('Watching endpoint %s was cancelled during '
+                              'callback execution.', endpoint)
+                    break
 
 
 def _utf8_decoder(content):
