@@ -37,6 +37,7 @@ Programming HowTos and Tutorials
     goals_and_use_cases
     libnetwork_remote_driver_design
     kuryr_mitaka_milestone
+    testing
 
 
 Indices and tables
