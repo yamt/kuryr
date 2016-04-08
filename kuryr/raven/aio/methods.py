@@ -105,6 +105,8 @@ class Response(object):
         """Returns the whole body of a non-chunked HTTP response"""
         result = yield from self._reader.readexactly(
             int(self.headers[headers.CONTENT_LENGTH]))
+        if self._writer.can_write_eof():
+            self._writer.write_eof()
         self._writer.close()
         self.content = result
         if self.decoder is not None:
