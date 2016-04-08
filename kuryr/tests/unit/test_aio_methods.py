@@ -61,6 +61,8 @@ class TestAIOMethods(base.TestKuryrBase, test_utils.TestCase):
     def test_response_read(self, length):
         reader = asyncio.streams.StreamReader(loop=self.loop)
         writer = self.mox.CreateMock(asyncio.StreamWriter)
+        writer.can_write_eof().AndReturn(True)
+        writer.write_eof()
         writer.close()
 
         reader.feed_data(self.data)
@@ -158,6 +160,8 @@ class TestAIOMethods(base.TestKuryrBase, test_utils.TestCase):
     def test_response_read_chunk(self, data, expected):
         reader = streams.ChunkedStreamReader(loop=self.loop)
         writer = self.mox.CreateMock(asyncio.StreamWriter)
+        writer.can_write_eof().AndReturn(True)
+        writer.write_eof()
         writer.close()
 
         reader.feed_data(data)
@@ -202,6 +206,8 @@ class TestAIOMethods(base.TestKuryrBase, test_utils.TestCase):
     def test_response_read_line(self, data, expected):
         reader = streams.ChunkedStreamReader(loop=self.loop)
         writer = self.mox.CreateMock(asyncio.StreamWriter)
+        writer.can_write_eof().AndReturn(True)
+        writer.write_eof()
         writer.close()
 
         reader.feed_data(data)
