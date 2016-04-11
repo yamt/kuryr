@@ -28,3 +28,6 @@ NETWORK_GENERIC_OPTIONS = 'com.docker.network.generic'
 NEUTRON_UUID_OPTION = 'neutron.net.uuid'
 NEUTRON_NAME_OPTION = 'neutron.net.name'
 KURYR_EXISTING_NEUTRON_NET = 'kuryr.net.existing'
+
+K8S_ANNOTATION_PORT_KEY = 'kuryr.org/neutron-port'
+K8S_ANNOTATION_SUBNETS_KEY = 'kuryr.org/neutron-subnets'

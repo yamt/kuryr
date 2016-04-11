@@ -12,8 +12,6 @@
 
 METHOD_ADD = 'ADD'
 METHOD_DEL = 'DEL'
-NEUTRON_PORT = 'kuryr-neutron-port'
-NEUTRON_SUBNETS = 'kuryr-neutron-subnets'
 
 # ENV
 ARGS = 'CNI_ARGS'

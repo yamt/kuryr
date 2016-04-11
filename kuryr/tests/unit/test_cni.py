@@ -153,8 +153,8 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
         self.mox.StubOutWithMock(neutron_driver, '_get_pod_annotaions')
 
         neutron_driver._get_pod_annotaions().AndReturn({
-            driver.constants.NEUTRON_PORT: jsonutils.dumps(port),
-            driver.constants.NEUTRON_SUBNETS: jsonutils.dumps(subnets)})
+            constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(port),
+            constants.K8S_ANNOTATION_SUBNETS_KEY: jsonutils.dumps(subnets)})
 
         self.mox.StubOutWithMock(driver.binding, 'port_bind')
         ifname = self.basic_env[cni_const.IFNAME]

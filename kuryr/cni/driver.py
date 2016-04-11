@@ -30,8 +30,9 @@ from oslo_utils import excutils
 
 from kuryr._i18n import _LE
 from kuryr import binding
-from kuryr.cni import constants
+from kuryr.cni import constants as cni_consts
 from kuryr.cni import models
+from kuryr.common import constants
 from kuryr.common import exceptions
 
 
@@ -45,19 +46,19 @@ class KuryrCNIDriver(object):
     This class requires the users to implement add and delete methods.
     """
     MANDATORY_ENV_VARS = frozenset([
-        constants.PATH, constants.CONTAINERID, constants.NETNS,
-        constants.IFNAME, constants.COMMAND, constants.ARGS])
+        cni_consts.PATH, cni_consts.CONTAINERID, cni_consts.NETNS,
+        cni_consts.IFNAME, cni_consts.COMMAND, cni_consts.ARGS])
 
     def __init__(self):
         self.env = os.environ.copy()
         self._check_envvars()
-        self.path = self.env[constants.PATH]
-        self.container_id = self.env[constants.CONTAINERID]
-        self.netns = self.env[constants.NETNS]
-        self.ifname = self.env[constants.IFNAME]
-        self.command = self.env[constants.COMMAND]
+        self.path = self.env[cni_consts.PATH]
+        self.container_id = self.env[cni_consts.CONTAINERID]
+        self.netns = self.env[cni_consts.NETNS]
+        self.ifname = self.env[cni_consts.IFNAME]
+        self.command = self.env[cni_consts.COMMAND]
         self.cni_args = self._parse_cni_args_as_dict(
-            self.env[constants.ARGS])
+            self.env[cni_consts.ARGS])
         LOG.debug('%s %s %s %s %s', self.path, self.container_id, self.netns,
                   self.ifname, self.command)
 
@@ -71,9 +72,9 @@ class KuryrCNIDriver(object):
 
     def run_command(self):
         """Runs the command defined by CNI_COMMAND, either "ADD" or "DEL"."""
-        if self.command == constants.METHOD_ADD:
+        if self.command == cni_consts.METHOD_ADD:
             return self.add()
-        if self.command == constants.METHOD_DEL:
+        if self.command == cni_consts.METHOD_DEL:
             return self.delete()
 
     def _check_envvars(self):
@@ -116,9 +117,10 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
 
         endpoint_id = self.container_id
         pod_annotations = self._get_pod_annotaions()
-        neutron_port = jsonutils.loads(pod_annotations[constants.NEUTRON_PORT])
+        neutron_port = jsonutils.loads(
+            pod_annotations[constants.K8S_ANNOTATION_PORT_KEY])
         neutron_subnets = jsonutils.loads(
-            pod_annotations[constants.NEUTRON_SUBNETS])
+            pod_annotations[constants.K8S_ANNOTATION_SUBNETS_KEY])
 
         try:
             ifname, peer_name, (stdout, stderr) = binding.port_bind(
@@ -152,7 +154,8 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
         """Unbinds the Neutron port from the pod."""
         endpoint_id = self.container_id
         pod_annotations = self._get_pod_annotaions()
-        neutron_port = jsonutils.loads(pod_annotations[constants.NEUTRON_PORT])
+        neutron_port = jsonutils.loads(
+            pod_annotations[constants.K8S_ANNOTATION_PORT_KEY])
 
         try:
             stdout, stderr = binding.port_unbind(endpoint_id, neutron_port)
