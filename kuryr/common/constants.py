@@ -19,3 +19,6 @@ SCHEMA = {
 }
 
 DEVICE_OWNER = 'kuryr:container'
+
+K8S_ANNOTATION_PORT_KEY = 'kuryr.org/neutron-port'
+K8S_ANNOTATION_SUBNETS_KEY = 'kuryr.org/neutron-subnets'
