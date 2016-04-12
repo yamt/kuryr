@@ -33,6 +33,7 @@ DELETED_EVENT = 'DELETED'
 MODIFIED_EVENT = 'MODIFIED'
 
 LOG = log.getLogger(__name__)
+LOG.setLevel(log.DEBUG)
 
 
 @six.add_metaclass(abc.ABCMeta)

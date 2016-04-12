@@ -36,6 +36,7 @@ from kuryr.raven import watchers
 
 
 LOG = log.getLogger(__name__)
+LOG.setLevel(log.DEBUG)
 
 HARDCODED_NET_NAME = 'raven-default'
 
