@@ -130,67 +130,73 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
 
     The following tests validate if translate method works appropriately.
     """
-    def test_translate(self):
-        """Tests if K8sServicesWatcher.translate works as intended."""
 
-        FakeRaven = raven.register_watchers(
-            watchers.K8sPodsWatcher)(_FakeRaven)
-        fake_raven = FakeRaven()
-        fake_raven._ensure_networking_base()
-        translate = watchers.K8sPodsWatcher.translate.__get__(
-            fake_raven, FakeRaven)
-
-        fake_pod_add_event = {
-            "type": "ADDED",
-            "object": {
-                "kind": "Pod",
-                "apiVersion": "v1",
-                "metadata": {
-                    "name": "frontend-qr8d6",
-                    "generateName": "frontend-",
-                    "namespace": "default",
-                    "selfLink": "/api/v1/namespaces/default/pods/frontend-qr8d6",  # noqa
-                    "uid": "8e174673-e03f-11e5-8c79-42010af00003",
-                    "resourceVersion": "107227",
-                    "creationTimestamp": "2016-03-02T06:25:27Z",
-                    "labels": {
-                        "app": "guestbook",
-                        "tier": "frontend"
-                    },
-                    "annotations": {
-                        "kubernetes.io/created-by": {
-                            "kind": "SerializedReference",
-                            "apiVersion": "v1",
-                            "reference": {
-                                "kind": "ReplicationController",
-                                "namespace": "default",
-                                "name": "frontend",
-                                "uid": "8e1657d9-e03f-11e5-8c79-42010af00003",
-                                "apiVersion": "v1",
-                                "resourceVersion": "107226"
-                            }
-                        }
+    fake_pod_object = {
+        "kind": "Pod",
+        "apiVersion": "v1",
+        "metadata": {
+            "name": "frontend-qr8d6",
+            "generateName": "frontend-",
+            "namespace": "default",
+            "selfLink": "/api/v1/namespaces/default/pods/frontend-qr8d6",  # noqa
+            "uid": "8e174673-e03f-11e5-8c79-42010af00003",
+            "resourceVersion": "107227",
+            "creationTimestamp": "2016-03-02T06:25:27Z",
+            "labels": {
+                "app": "guestbook",
+                "tier": "frontend"
+            },
+            "annotations": {
+                "kubernetes.io/created-by": {
+                    "kind": "SerializedReference",
+                    "apiVersion": "v1",
+                    "reference": {
+                        "kind": "ReplicationController",
+                        "namespace": "default",
+                        "name": "frontend",
+                        "uid": "8e1657d9-e03f-11e5-8c79-42010af00003",
+                        "apiVersion": "v1",
+                        "resourceVersion": "107226"
                     }
                 }
             }
         }
-        fake_port_name = fake_pod_add_event['object']['metadata']['name']
-        fake_network_id = fake_raven._network['id']
+    }
+
+    def setUp(self):
+        super(TestK8sPodsWatcher, self).setUp()
+        FakeRaven = raven.register_watchers(
+            watchers.K8sPodsWatcher)(_FakeRaven)
+        self.fake_raven = FakeRaven()
+        self.fake_raven._ensure_networking_base()
+        self.translate = watchers.K8sPodsWatcher.translate.__get__(
+            self.fake_raven, FakeRaven)
+        self.addCleanup(self.fake_raven._event_loop.stop)
+        self.addCleanup(self.fake_raven._event_loop.close)
+
+    def test_translate_added(self):
+        """Tests if K8sServicesWatcher.translate works as intended."""
+        fake_pod_added_event = {
+            "type": "ADDED",
+            "object": self.fake_pod_object,
+        }
+        fake_port_name = fake_pod_added_event['object']['metadata']['name']
+        fake_network_id = self.fake_raven._network['id']
         fake_port_id = str(uuid.uuid4())
         fake_port = self._get_fake_port(
             fake_port_name, fake_network_id, fake_port_id)['port']
-        fake_port_future = asyncio.Future(loop=fake_raven._event_loop)
+        fake_port_future = asyncio.Future(loop=self.fake_raven._event_loop)
         fake_port_future.set_result({'port': fake_port})
-        metadata = fake_pod_add_event['object']['metadata']
+        metadata = fake_pod_added_event['object']['metadata']
         new_port = {
             'name': metadata.get('name', ''),
-            'network_id': fake_raven._network['id'],
+            'network_id': self.fake_raven._network['id'],
             'admin_state_up': True,
             'device_owner': constants.DEVICE_OWNER,
-            'fixed_ips': [{'subnet_id': fake_raven._subnet['id']}]
+            'fixed_ips': [{'subnet_id': self.fake_raven._subnet['id']}]
         }
-        self.mox.StubOutWithMock(fake_raven, 'delegate')
-        fake_raven.delegate(mox.IsA(fake_raven.neutron.create_port),
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        self.fake_raven.delegate(mox.IsA(self.fake_raven.neutron.create_port),
                             {'port': new_port}).AndReturn(fake_port_future)
         path = metadata.get('selfLink', '')
         annotations = metadata['annotations']
@@ -198,7 +204,7 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
         metadata.update({'annotations': annotations})
         annotations.update(
             {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(fake_port)})
-        fake_subnet = fake_raven._subnet
+        fake_subnet = self.fake_raven._subnet
         annotations.update(
             {constants.K8S_ANNOTATION_SUBNETS_KEY: jsonutils.dumps(
                 [fake_subnet])})
@@ -214,14 +220,12 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
 
         fake_patch_response = _FakeSuccessResponse()
         fake_patch_response_future = asyncio.Future(
-            loop=fake_raven._event_loop)
+            loop=self.fake_raven._event_loop)
         fake_patch_response_future.set_result(fake_patch_response)
-        fake_raven.delegate(
+        self.fake_raven.delegate(
             requests.patch, watchers.K8S_API_ENDPOINT_BASE + path,
             data=jsonutils.dumps(fake_pod_update_data),
             headers=headers).AndReturn(fake_patch_response_future)
         self.mox.ReplayAll()
-        fake_raven._event_loop.run_until_complete(
-            translate(fake_pod_add_event))
-        fake_raven._event_loop.stop()
-        fake_raven._event_loop.close()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_pod_added_event))
