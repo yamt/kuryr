@@ -182,7 +182,11 @@ class K8sPodsWatcher(K8sAPIWatcher):
         event_type = decoded_json.get('type', '')
         content = decoded_json.get('object', {})
         metadata = content.get('metadata', {})
+        annotations = metadata.get('annotations', {})
         if event_type == ADDED_EVENT:
+            if constants.K8S_ANNOTATION_PORT_KEY in annotations:
+                LOG.debug("Ignore ADD as the pod already has a neutron port")
+                return
             new_port = {
                 'name': metadata.get('name', ''),
                 'network_id': self._network['id'],
@@ -200,7 +204,6 @@ class K8sPodsWatcher(K8sAPIWatcher):
                               " Neutron port: {0}").format(ex))
                 raise
             path = metadata.get('selfLink', '')
-            annotations = metadata.get('annotations', {})
             annotations.update(
                 {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(port)})
             annotations.update(
