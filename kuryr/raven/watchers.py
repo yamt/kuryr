@@ -27,7 +27,6 @@ from kuryr.common import constants
 
 K8S_API_ENDPOINT_BASE = config.CONF.k8s.api_root
 K8S_API_ENDPOINT_V1 = K8S_API_ENDPOINT_BASE + '/api/v1'
-LOG = log.getLogger(__name__)
 
 ADDED_EVENT = 'ADDED'
 DELETED_EVENT = 'DELETED'
