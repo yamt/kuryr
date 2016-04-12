@@ -230,3 +230,29 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
             self.translate(fake_pod_added_event))
+
+    def test_translate_deleted(self):
+        """Tests if K8sServicesWatcher.translate works as intended for DELETED.
+        """
+        fake_pod_deleted_event = {
+            "type": "DELETED",
+            "object": self.fake_pod_object,
+        }
+        fake_port_name = fake_pod_deleted_event['object']['metadata']['name']
+        fake_network_id = self.fake_raven._network['id']
+        fake_port_id = str(uuid.uuid4())
+        fake_port = self._get_fake_port(
+            fake_port_name, fake_network_id, fake_port_id)['port']
+        metadata = fake_pod_deleted_event['object']['metadata']
+        annotations = metadata['annotations']
+        annotations.update(
+            {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(fake_port)})
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        none_future = asyncio.Future(loop=self.fake_raven._event_loop)
+        none_future.set_result(None)
+        self.fake_raven.delegate(
+            mox.IsA(self.fake_raven.neutron.delete_port),
+            fake_port_id).AndReturn(none_future)
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_pod_deleted_event))

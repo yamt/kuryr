@@ -225,6 +225,18 @@ class K8sPodsWatcher(K8sAPIWatcher):
                     data=jsonutils.dumps(data), headers=headers)
                 assert response.status_code == requests.codes.ok
                 LOG.debug("Successfully updated the annotations.")
+        elif event_type == DELETED_EVENT:
+            neutron_port = jsonutils.loads(
+                annotations.get(constants.K8S_ANNOTATION_PORT_KEY, '{}'))
+            if neutron_port:
+                port_id = neutron_port['id']
+                try:
+                    yield from self.delegate(self.neutron.delete_port, port_id)
+                except n_exceptions.NeutronClientException as ex:
+                    LOG.error(_LE("Error happend during deleting a"
+                                  " Neutron port: {0}").format(ex))
+                    raise
+                LOG.debug("Successfully deleted the neutron port.")
 
 
 class K8sServicesWatcher(K8sAPIWatcher):
