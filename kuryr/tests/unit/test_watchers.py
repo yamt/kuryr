@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import asyncio
+import copy
 import uuid
 
 import ddt
@@ -199,7 +200,7 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
         self.fake_raven.delegate(mox.IsA(self.fake_raven.neutron.create_port),
                             {'port': new_port}).AndReturn(fake_port_future)
         path = metadata.get('selfLink', '')
-        annotations = metadata['annotations']
+        annotations = copy.deepcopy(metadata['annotations'])
         metadata = {}
         metadata.update({'annotations': annotations})
         annotations.update(
