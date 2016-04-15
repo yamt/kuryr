@@ -179,13 +179,19 @@ class TestRaven(base.TestKuryrBase):
         """Check that it creates net/subnet when none are reported"""
         r = raven.Raven()
 
+        self.mox.StubOutWithMock(raven.controllers,
+                                 '_get_security_groups_by_attrs')
         self.mox.StubOutWithMock(raven.controllers, '_get_networks_by_attrs')
         self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
+        self.mox.StubOutWithMock(r.neutron, 'create_security_group')
+        self.mox.StubOutWithMock(r.neutron, 'create_security_group_rule')
         self.mox.StubOutWithMock(r.neutron, 'create_network')
         self.mox.StubOutWithMock(r.neutron, 'create_subnet')
 
         subnet_cidr = config.CONF.k8s.cluster_subnet
         service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
+        raven.controllers._get_security_groups_by_attrs(
+            unique=False, name=raven.HARDCODED_SG_NAME).AndReturn([])
         raven.controllers._get_networks_by_attrs(
             unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([])
         raven.controllers._get_subnets_by_attrs(
@@ -193,9 +199,21 @@ class TestRaven(base.TestKuryrBase):
         raven.controllers._get_subnets_by_attrs(
             unique=False, cidr=service_subnet_cidr).AndReturn([])
 
+        sg_id = 'd1e79df3-3a16-4587-a90f-0a5d1893776a'
         net_id = '73b7056d-ff6a-450c-9d1b-da222b910330'
         subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
         tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
+        r.neutron.create_security_group(
+            {'security_group': {'name': raven.HARDCODED_SG_NAME}}) \
+                .AndReturn({'security_group': {'id': sg_id}})
+        for ethertype in ['IPv4', 'IPv6']:
+            r.neutron.create_security_group_rule(
+                {'security_group_rule': {
+                    'security_group_id': sg_id,
+                    'direction': 'ingress',
+                    'remote_group_id': sg_id,
+                    'ethertype': ethertype}}) \
+                .AndReturn({})
         r.neutron.create_network(
             {'network': {'name': raven.HARDCODED_NET_NAME}}).AndReturn(
                 {'network': {
@@ -364,17 +382,24 @@ class TestRaven(base.TestKuryrBase):
         """Check that it creates net/subnet when nothing needs to be done"""
         r = raven.Raven()
 
+        self.mox.StubOutWithMock(raven.controllers,
+                                 '_get_security_groups_by_attrs')
         self.mox.StubOutWithMock(raven.controllers, '_get_networks_by_attrs')
         self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
         self.mox.StubOutWithMock(r.neutron, 'create_network')
         self.mox.StubOutWithMock(r.neutron, 'create_subnet')
 
+        sg_id = 'd1e79df3-3a16-4587-a90f-0a5d1893776a'
         net_id = '73b7056d-ff6a-450c-9d1b-da222b910330'
         subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
         tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
 
         subnet_cidr = config.CONF.k8s.cluster_subnet
         service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
+        raven.controllers._get_security_groups_by_attrs(
+            unique=False, name=raven.HARDCODED_SG_NAME).AndReturn([{
+                'id': sg_id,
+                'name': raven.HARDCODED_SG_NAME}])
         raven.controllers._get_networks_by_attrs(
             unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([{
                 'status': 'ACTIVE',
