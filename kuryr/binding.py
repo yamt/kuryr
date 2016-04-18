@@ -118,12 +118,25 @@ def _make_up_veth(peer_veth, neutron_port, neutron_subnets,
         peer_veth.up()
 
 
+def _setup_default_gateway(ipdb, peer_veth, default_gateway):
+    spec = {
+        'dst': '0.0.0.0/0',
+        'oif': peer_veth.index,
+        'gateway': default_gateway,
+    }
+    ipdb.routes.add(spec).commit()
+
+
 def port_bind(endpoint_id, neutron_port, neutron_subnets,
-              ifname='', netns=None):
+              ifname='', netns=None, default_gateway=None):
     """Binds the Neutron port to the network interface on the host.
 
-    When netns is specifed, it will set up the namespace for the container
-    networking.
+    When ``netns`` is specifed, it will set up the namespace for the container
+    networking. In addition to ``netns``, if ``default_gateway`` is specified,
+    the default gateway is set by it inside the netns. K8s' CNI implementation
+    doesn't set the default gateway and it's our responsibility to configure
+    it. Since the IP addresse specified by ``default_gateway`` would be
+    virtual, ``default_gateway`` **MUST** be passed along with ``netns``.
 
     :param endpoint_id:     the ID of the endpoint as string
     :param neutron_port:    a port dictionary returned from
@@ -132,6 +145,7 @@ def port_bind(endpoint_id, neutron_port, neutron_subnets,
                             endpoint is trying to join
     :param ifname:          the name of the interface put inside the netns
     :param netns:           the path to the netns
+    :param default_gateway: the IP address of the default gateway in string
     :returns: the tuple of the names of the veth pair and the tuple of stdout
               and stderr returned by processutils.execute invoked with the
               executable script for binding
@@ -165,6 +179,9 @@ def port_bind(endpoint_id, neutron_port, neutron_subnets,
                 try:
                     with ipdb_ns.by_name[peer_name] as peer_veth:
                         _make_up_veth(peer_veth, neutron_port, neutron_subnets)
+                    if default_gateway:
+                        _setup_default_gateway(
+                            ipdb_ns, peer_veth, default_gateway)
                 finally:
                     ipdb_ns.release()
     except pyroute2.ipdb.common.CreateException:
