@@ -60,3 +60,11 @@ class TestKuryrUtils(base.TestKuryrBase):
         fixed_ips = utils.get_dict_format_fixed_ips_from_kv_format(
             fake_fixed_ips_kv_format)
         self.assertEqual(expected_dict_form, fixed_ips)
+
+    @ddt.data(b'{}', b'[]', b'42', b'{}', b'{"foo": 42}', b'{"foo": "bar"}',
+              b'{"foo": {"bar": 42}}', b'[1, 2, 3]',
+              b'{"foo": ["bar", "baz"]}')
+    def test_utf8_json_decoder(self, data):
+        """Tests the bytes can be (de)serialized to/from UTF-8 JSON."""
+        deserialized = utils.utf8_json_decoder(data)
+        self.assertEqual(utils.utf8_json_encoder(deserialized), data)

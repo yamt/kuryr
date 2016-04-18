@@ -24,6 +24,7 @@ from neutronclient.neutron import client
 from neutronclient.v2_0 import client as client_v2
 from oslo_concurrency import processutils
 from oslo_config import cfg
+from oslo_serialization import jsonutils
 from werkzeug import exceptions as w_exceptions
 
 from kuryr._i18n import _LE
@@ -165,3 +166,21 @@ def make_net_tags(tag):
 
 def make_net_name(netid):
     return const.NET_NAME_PREFIX + netid[:8]
+
+
+def utf8_json_decoder(bytes):
+    """Deserializes the bytes into UTF-8 encoded JSON.
+
+    :param bytes: The bytes to be converted into the UTF-8 encoded JSON.
+    :returns: The UTF-8 encoded JSON represented by Python dictionary format.
+    """
+    return jsonutils.loads(bytes.decode('utf8'))
+
+
+def utf8_json_encoder(deserialized):
+    """Serializes the UTF-8 encoded JSON into bytes.
+
+    :param deserialized: The deserized UTF-8 encoded JSON to be converted.
+    :returns: The bytes converted from the deserialized JSON.
+    """
+    return bytearray(jsonutils.dumps(deserialized), 'utf-8')
