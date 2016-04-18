@@ -109,7 +109,7 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
 
         net = netaddr.IPNetwork(config.CONF.k8s.cluster_subnet)
         port_ip = str(netaddr.IPAddress(net.first + 11))
-        gateway_ip = str(netaddr.IPAddress(net.first + 1))
+        gateway_ip = config.CONF.k8s.cluster_gateway_ip
 
         port = {
             'admin_state_up': True,
@@ -161,7 +161,8 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
         ifname = self.basic_env[cni_const.IFNAME]
         driver.binding.port_bind(
             self.basic_env[cni_const.CONTAINERID], port, subnets,
-            ifname=ifname, netns=self.basic_env[cni_const.NETNS]).AndReturn(
+            ifname=ifname, netns=self.basic_env[cni_const.NETNS],
+            default_gateway=gateway_ip).AndReturn(
                 (ifname, 'peer42', ('', '')))
 
         self.mox.ReplayAll()

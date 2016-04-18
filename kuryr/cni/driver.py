@@ -32,6 +32,7 @@ from kuryr._i18n import _LE
 from kuryr import binding
 from kuryr.cni import constants as cni_consts
 from kuryr.cni import models
+from kuryr.common import config
 from kuryr.common import constants
 from kuryr.common import exceptions
 
@@ -127,7 +128,8 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
         try:
             ifname, peer_name, (stdout, stderr) = binding.port_bind(
                 endpoint_id, neutron_port, neutron_subnets,
-                ifname=self.ifname, netns=self.netns)
+                ifname=self.ifname, netns=self.netns,
+                default_gateway=config.CONF.k8s.cluster_gateway_ip)
             LOG.debug(stdout)
             if stderr:
                 LOG.error(stderr)

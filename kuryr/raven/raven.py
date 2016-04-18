@@ -148,6 +148,7 @@ class Raven(service.Service):
                 'network_id': network['id'],
                 'ip_version': ip.version,
                 'cidr': subnet_cidr,
+                'gateway_ip': config.CONF.k8s.cluster_gateway_ip,
                 'enable_dhcp': False,
             }
             subnet_response = self.neutron.create_subnet(

@@ -115,6 +115,11 @@ k8s_opts = [
     cfg.StrOpt('cluster_subnet',
                default=os.environ.get(
                    'FLANNEL_NET', '172.16.0.0/16')),
+    cfg.StrOpt('cluster_gateway_ip',
+               help=_('The gateway IP address uses to set the gateway of the '
+                      'cluster and the default gateways of the pods.'),
+               default=os.environ.get(
+                   'SERVICE_GATEWAY_IP', '172.16.0.1')),
     # NOTE(tfukushima): SERVICE_CLUSTER_IP_RANGE is used in the deployment
     #   scripts.
     # https://github.com/kubernetes/kubernetes/search?utf8=%E2%9C%93&q=SERVICE_CLUSTER_IP_RANGE&type=Code  # noqa

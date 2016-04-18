@@ -232,6 +232,7 @@ class TestRaven(base.TestKuryrBase):
                                          subnet_cidr),
                 'network_id': net_id,
                 'ip_version': 4,
+                'gateway_ip': config.CONF.k8s.cluster_gateway_ip,
                 'cidr': subnet_cidr,
                 'enable_dhcp': False}}).AndReturn(
                     {'subnet': {
