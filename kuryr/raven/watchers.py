@@ -76,9 +76,9 @@ class K8sAPIWatcher(object):
 class K8sPodsWatcher(K8sAPIWatcher):
     """A Pod watcher.
 
-    ``K8sPodsWatcher`` makes a GET requrest against ``/api/v1/pods?watch=true``
-    and receives the event notifications. Then it translates them into
-    requests against the Neutron API.
+    ``K8sPodsWatcher`` makes a GET request against ``/api/v1/pods?watch=true``
+    and receives the event notifications. Then it translates them, when
+    applicable, into requests against the Neutron API.
 
     An example of a JSON response from the apiserver follows. It is
     pretty-printed but the actual response is provided as a single line of
@@ -237,6 +237,9 @@ class K8sPodsWatcher(K8sAPIWatcher):
                                   " Neutron port: {0}").format(ex))
                     raise
                 LOG.debug("Successfully deleted the neutron port.")
+            else:
+                LOG.debug('Deletion event without neutron port information. '
+                          'Ignoring it...')
 
 
 class K8sServicesWatcher(K8sAPIWatcher):
