@@ -99,7 +99,32 @@ class Raven(service.Service):
         self._reconnect = True
         assert not self._event_loop.is_closed()
 
-    def _ensure_networking_base(self):
+    @staticmethod
+    def _get_router_ports_by_subnet_id(neutron_subnet_id, neutron_port_list):
+        router_ports = [
+            port for port in neutron_port_list
+            if ((neutron_subnet_id in [fip['subnet_id']
+                                       for fip in port.get('fixed_ips', [])])
+                or (neutron_subnet_id == port.get('subnet_id', '')))]
+
+        return router_ports
+
+    def _get_or_create_service_router(self):
+        router_name = HARDCODED_NET_NAME + '-router'
+        routers = controllers._get_routers_by_attrs(
+            unique=False, name=router_name)
+        if routers:
+            router = routers[0]
+            LOG.debug('Reusing the existing router {0}'.format(router))
+        else:
+            created_router_response = self.neutron.create_router(
+                {'router': {'name': router_name}})
+            router = created_router_response['router']
+            LOG.debug('Created a new router {0}'.format(router))
+
+        return router
+
+    def _create_default_security_group(self):
         sgs = controllers._get_security_groups_by_attrs(
             unique=False, name=HARDCODED_SG_NAME)
         if sgs:
@@ -124,6 +149,9 @@ class Raven(service.Service):
                 self.neutron.create_security_group_rule(req)
             LOG.debug('Created a new default SG {0}'.format(sg))
         self._default_sg = sg['id']
+
+    # TODO(tfukushima): Replace this method with the namespace watcher.
+    def _construct_cluster_network(self, namespace_router):
         networks = controllers._get_networks_by_attrs(
             unique=False, name=HARDCODED_NET_NAME)
         if networks:
@@ -137,7 +165,8 @@ class Raven(service.Service):
         self._network = network
         subnet_cidr = config.CONF.k8s.cluster_subnet
         subnets = controllers._get_subnets_by_attrs(
-            unique=False, cidr=subnet_cidr)
+            unique=False, cidr=subnet_cidr,
+            network_id=network['id'])
         if subnets:
             subnet = subnets[0]
             LOG.debug('Reusing the existing subnet {0}'.format(subnet))
@@ -157,9 +186,44 @@ class Raven(service.Service):
             LOG.debug('Created a new subnet {0}'.format(subnet))
         self._subnet = subnet
 
+        neutron_network_id = network['id']
+        neutron_router_id = namespace_router['id']
+        neutron_subnet_id = subnet['id']
+        filtered_ports = controllers._get_ports_by_attrs(
+            unique=False, device_owner='network:router_interface',
+            device_id=neutron_router_id, network_id=neutron_network_id)
+
+        router_ports = self._get_router_ports_by_subnet_id(
+            neutron_subnet_id, filtered_ports)
+
+        if not router_ports:
+            self.neutron.add_interface_router(
+                neutron_router_id, {'subnet_id': neutron_subnet_id})
+        else:
+            LOG.debug('The subnet {0} is already bound to the router'
+                      .format(neutron_subnet_id))
+
+    # TODO(tfukushima): Replace this method with the namespace watcher.
+    def _construct_service_network(self, namespace_router):
+        service_network_name = HARDCODED_NET_NAME + '-service'
+        service_networks = controllers._get_networks_by_attrs(
+            unique=False, name=service_network_name)
+        if service_networks:
+            service_network = service_networks[0]
+            LOG.debug('Reusing the existing service network {0}'
+                      .format(service_network))
+        else:
+            service_network_response = self.neutron.create_network(
+                {'network': {'name': service_network_name}})
+            service_network = service_network_response['network']
+            LOG.debug('Created a new service network {0}'
+                      .format(service_network))
+            self._service_network = service_network
+
         service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
         service_subnets = controllers._get_subnets_by_attrs(
-            unique=False, cidr=service_subnet_cidr)
+            unique=False, cidr=service_subnet_cidr,
+            network_id=service_network['id'])
         if service_subnets:
             service_subnet = service_subnets[0]
             LOG.debug('Reusing the existing service subnet {0}'
@@ -168,7 +232,7 @@ class Raven(service.Service):
             ip = netaddr.IPNetwork(service_subnet_cidr)
             new_service_subnet = {
                 'name': HARDCODED_NET_NAME + '-' + service_subnet_cidr,
-                'network_id': network['id'],
+                'network_id': service_network['id'],
                 'ip_version': ip.version,
                 'cidr': service_subnet_cidr,
                 'enable_dhcp': False,
@@ -179,6 +243,36 @@ class Raven(service.Service):
             LOG.debug('Created a new service subnet {0}'
                       .format(service_subnet))
         self.service_subnet = service_subnet
+
+        neutron_service_network_id = service_network['id']
+        neutron_router_id = namespace_router['id']
+
+        filtered_service_ports = controllers._get_ports_by_attrs(
+            unique=False, device_owner='network:router_interface',
+            device_id=neutron_router_id,
+            network_id=neutron_service_network_id)
+
+        service_subnet_id = service_subnet['id']
+        service_router_ports = self._get_router_ports_by_subnet_id(
+            service_subnet_id, filtered_service_ports)
+
+        if not service_router_ports:
+            self.neutron.add_interface_router(
+                neutron_router_id, {'subnet_id': service_subnet_id})
+        else:
+            LOG.debug('The cluster IP subnet {0} is already bound to the '
+                      'router.'
+                      .format(service_subnet_id))
+
+    # TODO(tfukushima): Replace this method with the namespace watcher.
+    def _ensure_networking_base(self):
+        self._create_default_security_group()
+
+        router = self._get_or_create_service_router()
+        self._router = router
+
+        self._construct_cluster_network(router)
+        self._construct_service_network(router)
 
     def _task_done_callback(self, task):
         endpoint = self._tasks.pop(task)

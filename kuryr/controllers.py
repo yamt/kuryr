@@ -209,6 +209,16 @@ def _get_subnetpools_by_attrs(unique=True, **attrs):
     return subnetpools['subnetpools']
 
 
+def _get_routers_by_attrs(unique=True, **attrs):
+    routers = app.neutron.list_routers(**attrs)
+    if unique and len(routers.get('routers', [])) > 1:
+        raise exceptions.DuplicatedResourceException(
+            "Multiple Neutron routers exist for the params {0}"
+            .format(', '.join(['{0}={1}'.format(k, v)
+                               for k, v in attrs.items()])))
+    return routers['routers']
+
+
 def _get_security_groups_by_attrs(unique=True, **attrs):
     """Returns an iterable of the security groups with matching attrs
 

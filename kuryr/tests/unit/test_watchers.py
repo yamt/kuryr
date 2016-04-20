@@ -114,12 +114,29 @@ class _FakeRaven(raven.Raven):
             subnet_v4_id=uuid.uuid4())
         self._subnet = fake_subnet['subnet']
 
+        self._service_network = {
+            'id': str(uuid.uuid4()),
+            'name': raven.HARDCODED_NET_NAME + '-service'
+        }
         service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
         fake_service_subnet = base.TestKuryrBase._get_fake_v4_subnet(
             self._network['id'],
             name=raven.HARDCODED_NET_NAME + '-' + service_subnet_cidr,
             subnet_v4_id=uuid.uuid4())
         self.service_subnet = fake_service_subnet['subnet']
+
+        self._router = {
+            "router": {
+                "status": "ACTIVE",
+                "name": "fake_router",
+                "admin_state_up": True,
+                "tenant_id": str(uuid.uuid4()),
+                "distributed": False,
+                "routes": [],
+                "ha": False,
+                "id": str(uuid.uuid4()),
+            },
+        }
 
 
 class _FakeSuccessResponse(object):

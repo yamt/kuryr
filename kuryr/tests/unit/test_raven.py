@@ -12,9 +12,11 @@
 # limitations under the License.
 import asyncio
 import collections
+import copy
 import itertools
 import os
 import signal
+import uuid
 
 import ddt
 from oslo_service import service
@@ -187,8 +189,12 @@ class TestRaven(base.TestKuryrBase):
         self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
         self.mox.StubOutWithMock(r.neutron, 'create_security_group')
         self.mox.StubOutWithMock(r.neutron, 'create_security_group_rule')
+        self.mox.StubOutWithMock(raven.controllers, '_get_routers_by_attrs')
+        self.mox.StubOutWithMock(raven.controllers, '_get_ports_by_attrs')
         self.mox.StubOutWithMock(r.neutron, 'create_network')
         self.mox.StubOutWithMock(r.neutron, 'create_subnet')
+        self.mox.StubOutWithMock(r.neutron, 'create_router')
+        self.mox.StubOutWithMock(r.neutron, 'add_interface_router')
 
         subnet_cidr = config.CONF.k8s.cluster_subnet
         service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
@@ -196,18 +202,49 @@ class TestRaven(base.TestKuryrBase):
             unique=False, name=raven.HARDCODED_SG_NAME).AndReturn([])
         raven.controllers._get_networks_by_attrs(
             unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([])
-        raven.controllers._get_subnets_by_attrs(
-            unique=False, cidr=subnet_cidr).AndReturn([])
-        raven.controllers._get_subnets_by_attrs(
-            unique=False, cidr=service_subnet_cidr).AndReturn([])
+        raven.controllers._get_networks_by_attrs(
+            unique=False,
+            name=raven.HARDCODED_NET_NAME + '-service').AndReturn([])
+        raven.controllers._get_routers_by_attrs(
+            unique=False,
+            name=raven.HARDCODED_NET_NAME + '-router').AndReturn([])
 
-        sg_id = 'd1e79df3-3a16-4587-a90f-0a5d1893776a'
-        net_id = '73b7056d-ff6a-450c-9d1b-da222b910330'
-        subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
-        tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
+        router_id = str(uuid.uuid4())
+        cluster_network_id = str(uuid.uuid4())
+        service_network_id = str(uuid.uuid4())
+        cluster_subnet_id = str(uuid.uuid4())
+        service_subnet_id = str(uuid.uuid4())
+        tenant_id = str(uuid.uuid4())
+
+        raven.controllers._get_subnets_by_attrs(
+            unique=False, cidr=subnet_cidr,
+            network_id=cluster_network_id).AndReturn([])
+        raven.controllers._get_subnets_by_attrs(
+            unique=False, cidr=service_subnet_cidr,
+            network_id=service_network_id).AndReturn([])
+
+        raven.controllers._get_ports_by_attrs(
+            unique=False, device_owner='network:router_interface',
+            device_id=router_id, network_id=cluster_network_id).AndReturn([])
+        raven.controllers._get_ports_by_attrs(
+            unique=False, device_owner='network:router_interface',
+            device_id=router_id, network_id=service_network_id).AndReturn([])
+
+        router_name = raven.HARDCODED_NET_NAME + '-router'
+        fake_router_request = {
+            'router': {
+                'name': router_name,
+            },
+        }
+        fake_router_response = copy.deepcopy(fake_router_request)
+        fake_router_response['router']['id'] = router_id
+        r.neutron.create_router(
+            fake_router_request).AndReturn(fake_router_response)
+
+        sg_id = str(uuid.uuid4())
         r.neutron.create_security_group(
             {'security_group': {'name': raven.HARDCODED_SG_NAME}}).AndReturn(
-                {'security_group': {'id': sg_id}})
+            {'security_group': {'id': sg_id}})
         for ethertype in ['IPv4', 'IPv6']:
             r.neutron.create_security_group_rule(
                 {'security_group_rule': {
@@ -216,42 +253,64 @@ class TestRaven(base.TestKuryrBase):
                     'remote_group_id': sg_id,
                     'ethertype': ethertype}}) \
                 .AndReturn({})
+
+        fake_cluster_network_response = {
+            'network': {
+                'name': raven.HARDCODED_NET_NAME,
+                'subnets': [],
+                'admin_state_up': False,
+                'shared': False,
+                'status': 'ACTIVE',
+                'tenant_id': tenant_id,
+                'id': cluster_network_id,
+            },
+        }
         r.neutron.create_network(
             {'network': {'name': raven.HARDCODED_NET_NAME}}).AndReturn(
-                {'network': {
-                    'name': raven.HARDCODED_NET_NAME,
-                    'subnets': [],
-                    'admin_state_up': False,
-                    'shared': False,
-                    'status': 'ACTIVE',
-                    'tenant_id': tenant_id,
-                    'id': net_id}})
-        r.neutron.create_subnet(
-            {'subnet': {
+                fake_cluster_network_response)
+
+        fake_service_network_response = copy.deepcopy(
+            fake_cluster_network_response)
+        fake_service_network_response['network']['name'] += '-service'
+        fake_service_network_response['network']['id'] = service_network_id
+        service_network_name = raven.HARDCODED_NET_NAME + '-service'
+        r.neutron.create_network(
+            {'network': {'name': service_network_name}}).AndReturn(
+            fake_service_network_response)
+        new_cluster_subnet = {
+            'subnet': {
                 'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
                                          subnet_cidr),
-                'network_id': net_id,
+                'network_id': cluster_network_id,
                 'ip_version': 4,
                 'gateway_ip': config.CONF.k8s.cluster_gateway_ip,
                 'cidr': subnet_cidr,
-                'enable_dhcp': False}}).AndReturn(
-                    {'subnet': {
-                        'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
-                                                 subnet_cidr),
-                        'network_id': net_id,
-                        'tenant_id': tenant_id,
-                        'cidr': subnet_cidr,
-                        'id': subnet_id,
-                        'enable_dhcp': True}})
-        new_service_subnet = {
-            'name': '-'.join([raven.HARDCODED_NET_NAME, service_subnet_cidr]),
-            'network_id': net_id,
-            'ip_version': 4,
-            'cidr': service_subnet_cidr,
-            'enable_dhcp': False
+                'enable_dhcp': False,
+            },
         }
-        r.neutron.create_subnet({'subnet': new_service_subnet}).AndReturn(
-            {'subnet': new_service_subnet})
+        fake_cluster_subnet_response = copy.deepcopy(new_cluster_subnet)
+        fake_cluster_subnet_response['subnet']['id'] = cluster_subnet_id
+        r.neutron.create_subnet(new_cluster_subnet).AndReturn(
+            fake_cluster_subnet_response)
+        new_service_subnet = {
+            'subnet': {
+                'name': '-'.join([raven.HARDCODED_NET_NAME,
+                                  service_subnet_cidr]),
+                'network_id': service_network_id,
+                'ip_version': 4,
+                'cidr': service_subnet_cidr,
+                'enable_dhcp': False
+            },
+        }
+        fake_service_subnet_response = copy.deepcopy(new_service_subnet)
+        fake_service_subnet_response['subnet']['id'] = service_subnet_id
+        r.neutron.create_subnet(new_service_subnet).AndReturn(
+            fake_service_subnet_response)
+
+        r.neutron.add_interface_router(
+            router_id, {'subnet_id': cluster_subnet_id}).AndReturn(None)
+        r.neutron.add_interface_router(
+            router_id, {'subnet_id': service_subnet_id}).AndReturn(None)
 
         self.mox.ReplayAll()
         r._ensure_networking_base()
@@ -389,47 +448,106 @@ class TestRaven(base.TestKuryrBase):
                                  '_get_security_groups_by_attrs')
         self.mox.StubOutWithMock(raven.controllers, '_get_networks_by_attrs')
         self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
-        self.mox.StubOutWithMock(r.neutron, 'create_network')
-        self.mox.StubOutWithMock(r.neutron, 'create_subnet')
+        self.mox.StubOutWithMock(raven.controllers, '_get_routers_by_attrs')
+        self.mox.StubOutWithMock(raven.controllers, '_get_ports_by_attrs')
 
-        sg_id = 'd1e79df3-3a16-4587-a90f-0a5d1893776a'
-        net_id = '73b7056d-ff6a-450c-9d1b-da222b910330'
-        subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
-        tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
+        cluster_network_id = str(uuid.uuid4())
+        service_network_id = str(uuid.uuid4())
+        router_id = str(uuid.uuid4())
+        cluster_subnet_id = str(uuid.uuid4())
+        service_subnet_id = str(uuid.uuid4())
+        tenant_id = str(uuid.uuid4())
+        port_id = str(uuid.uuid4())
 
-        subnet_cidr = config.CONF.k8s.cluster_subnet
-        service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
+        router_name = raven.HARDCODED_NET_NAME + '-router'
+        fake_router = {
+            'id': router_id,
+            'name': router_name,
+        }
+        raven.controllers._get_routers_by_attrs(
+            unique=False,
+            name=raven.HARDCODED_NET_NAME + '-router').AndReturn([fake_router])
+
+        fake_cluster_network = {
+            'name': raven.HARDCODED_NET_NAME,
+            'subnets': [],
+            'admin_state_up': False,
+            'shared': False,
+            'status': 'ACTIVE',
+            'tenant_id': tenant_id,
+            'id': cluster_network_id,
+        }
+        raven.controllers._get_networks_by_attrs(
+            unique=False, name=raven.HARDCODED_NET_NAME).AndReturn(
+            [fake_cluster_network])
+
+        fake_service_network = copy.deepcopy(fake_cluster_network)
+        fake_service_network['name'] += '-service'
+        fake_service_network['id'] = service_network_id
+        raven.controllers._get_networks_by_attrs(
+            unique=False,
+            name=raven.HARDCODED_NET_NAME + '-service').AndReturn(
+            [fake_service_network])
+
+        sg_id = str(uuid.uuid4())
         raven.controllers._get_security_groups_by_attrs(
             unique=False, name=raven.HARDCODED_SG_NAME).AndReturn([{
                 'id': sg_id,
                 'name': raven.HARDCODED_SG_NAME}])
-        raven.controllers._get_networks_by_attrs(
-            unique=False, name=raven.HARDCODED_NET_NAME).AndReturn([{
-                'status': 'ACTIVE',
-                'subnets': [subnet_id],
-                'name': raven.HARDCODED_NET_NAME,
-                'admin_state_up': True,
-                'tenant_id': tenant_id,
-                'id': net_id,
-                'shared': False}])
-        raven.controllers._get_subnets_by_attrs(
-            unique=False, cidr=subnet_cidr).AndReturn([{
-                'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
-                                         subnet_cidr),
-                'network_id': net_id,
-                'tenant_id': tenant_id,
-                'cidr': subnet_cidr,
-                'id': subnet_id,
-                'enable_dhcp': True}])
-        service_subnet = {
-            'name': '-'.join([raven.HARDCODED_NET_NAME, service_subnet_cidr]),
-            'network_id': net_id,
-            'ip_version': 4,
-            'cidr': subnet_cidr,
-            'enable_dhcp': False
+
+        cluster_subnet_cidr = config.CONF.k8s.cluster_subnet
+        service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
+
+        fake_cluster_subnet = {
+            'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
+                                     cluster_subnet_cidr),
+            'network_id': cluster_network_id,
+            'tenant_id': tenant_id,
+            'cidr': cluster_subnet_cidr,
+            'id': cluster_subnet_id,
+            'enable_dhcp': True,
         }
         raven.controllers._get_subnets_by_attrs(
-            unique=False, cidr=service_subnet_cidr).AndReturn([service_subnet])
+            unique=False, cidr=cluster_subnet_cidr,
+            network_id=cluster_network_id).AndReturn(
+            [fake_cluster_subnet])
+
+        fake_service_subnet = {
+            'name': '-'.join([raven.HARDCODED_NET_NAME, service_subnet_cidr]),
+            'network_id': service_network_id,
+            'ip_version': 4,
+            'cidr': service_subnet_cidr,
+            'id': service_subnet_id,
+            'enable_dhcp': False,
+        }
+        raven.controllers._get_subnets_by_attrs(
+            unique=False, cidr=service_subnet_cidr,
+            network_id=service_network_id).AndReturn([fake_service_subnet])
+
+        fake_cluster_port = {
+            "network_id": cluster_network_id,
+            "tenant_id": tenant_id,
+            "device_owner": "network:router_interface",
+            "mac_address": "fa:16:3e:20:57:c3",
+            "fixed_ips": [{
+                'subnet_id': cluster_subnet_id,
+                'ip_address': '192.168.1.42',
+            }],
+            "id": port_id,
+            "device_id": router_id,
+        }
+        raven.controllers._get_ports_by_attrs(
+            unique=False, device_owner='network:router_interface',
+            device_id=router_id, network_id=cluster_network_id).AndReturn(
+            [fake_cluster_port])
+
+        fake_service_port = copy.deepcopy(fake_cluster_port)
+        fake_service_port['fixed_ips'][0]['subnet_id'] = service_subnet_id
+        fake_service_port['network_id'] = service_network_id
+        raven.controllers._get_ports_by_attrs(
+            unique=False, device_owner='network:router_interface',
+            device_id=router_id, network_id=service_network_id).AndReturn(
+            [fake_service_port])
 
         self.mox.ReplayAll()
         r._ensure_networking_base()
