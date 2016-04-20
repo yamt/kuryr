@@ -398,5 +398,7 @@ class Raven(service.Service):
 
 def run_raven():
     """Launchs a Raven service."""
+    config.init(sys.argv[1:])
+    log.setup(config.CONF, 'Raven')
     raven = service.launch(config.CONF, Raven())
     raven.wait()
