@@ -207,6 +207,21 @@ def _get_subnetpools_by_attrs(unique=True, **attrs):
     return subnetpools['subnetpools']
 
 
+def _get_security_groups_by_attrs(unique=True, **attrs):
+    """Returns an iterable of the security groups with matching attrs
+
+    Raises a DuplicatedResourceException if `unique` is requested and there is
+    more than a single security group match
+    """
+    sgs = app.neutron.list_security_groups(**attrs)
+    if unique and len(sgs.get('security_groups', [])) > 1:
+        raise exceptions.DuplicatedResourceException(
+            "Multiple Neutron security groups exist for the params {0}"
+            .format(', '.join(['{0}={1}'.format(k, v)
+                               for k, v in attrs.items()])))
+    return sgs['security_groups']
+
+
 def _get_subnet_cidr_using_cidr(cidr):
     subnet_network = str(cidr.network)
     subnet_cidr = '/'.join([subnet_network,
