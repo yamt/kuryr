@@ -102,6 +102,7 @@ class TestWatchers(base.TestKuryrBase):
 
 class _FakeRaven(raven.Raven):
     def _ensure_networking_base(self):
+        self._default_sg = str(uuid.uuid4())
         self._network = {
             'id': str(uuid.uuid4()),
             'name': raven.HARDCODED_NET_NAME,
@@ -194,7 +195,8 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
             'network_id': self.fake_raven._network['id'],
             'admin_state_up': True,
             'device_owner': constants.DEVICE_OWNER,
-            'fixed_ips': [{'subnet_id': self.fake_raven._subnet['id']}]
+            'fixed_ips': [{'subnet_id': self.fake_raven._subnet['id']}],
+            'security_groups': [self.fake_raven._default_sg],
         }
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
         self.fake_raven.delegate(mox.IsA(self.fake_raven.neutron.create_port),

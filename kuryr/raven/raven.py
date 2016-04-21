@@ -38,6 +38,7 @@ from kuryr.raven import watchers
 LOG = log.getLogger(__name__)
 
 HARDCODED_NET_NAME = 'raven-default'
+HARDCODED_SG_NAME = 'raven-default-sg'
 
 
 def register_watchers(*watchers):
@@ -94,6 +95,30 @@ class Raven(service.Service):
         assert not self._event_loop.is_closed()
 
     def _ensure_networking_base(self):
+        sgs = controllers._get_security_groups_by_attrs(
+            unique=False, name=HARDCODED_SG_NAME)
+        if sgs:
+            sg = sgs[0]
+            LOG.debug('Reusing the existing SG {0}'.format(sg))
+        else:
+            sg_response = self.neutron.create_security_group(
+                {'security_group': {'name': HARDCODED_SG_NAME}})
+            sg = sg_response['security_group']
+            # Create ingress rules similarly to Neutron Default SG
+            for ethertype in ['IPv4', 'IPv6']:
+                rule = {
+                    'security_group_id': sg['id'],
+                    'ethertype': ethertype,
+                    'direction': 'ingress',
+                    'remote_group_id': sg['id'],
+                }
+                req = {
+                    'security_group_rule': rule,
+                }
+                LOG.debug('Creating SG rule {0}'.format(req))
+                self.neutron.create_security_group_rule(req)
+            LOG.debug('Created a new default SG {0}'.format(sg))
+        self._default_sg = sg['id']
         networks = controllers._get_networks_by_attrs(
             unique=False, name=HARDCODED_NET_NAME)
         if networks:
