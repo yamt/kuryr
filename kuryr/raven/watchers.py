@@ -182,6 +182,7 @@ class K8sPodsWatcher(K8sAPIWatcher):
         content = decoded_json.get('object', {})
         metadata = content.get('metadata', {})
         annotations = metadata.get('annotations', {})
+        labels = metadata.get('labels', {})
         if event_type == ADDED_EVENT:
             if constants.K8S_ANNOTATION_PORT_KEY in annotations:
                 LOG.debug("Ignore ADD as the pod already has a neutron port")
@@ -193,12 +194,24 @@ class K8sPodsWatcher(K8sAPIWatcher):
                 'device_owner': constants.DEVICE_OWNER,
                 'fixed_ips': [{'subnet_id': self._subnet['id']}]
             }
+            sg = labels.get(constants.K8S_LABEL_SECURITY_GROUP_KEY)
+            if sg:
+                # NOTE(yamamoto): If the given SG is invalid,
+                # (eg. non-UUID, non-existent SG, etc) the following
+                # create_port would fail.
+                new_port['security_groups'] = [sg]
+            else:
+                # REVISIT(yamamoto): An alternative is to map the lack of
+                # label to no SG, rather than the default SG.
+                pass
             try:
                 created_port = yield from self.delegate(
                     self.neutron.create_port, {'port': new_port})
                 port = created_port['port']
                 LOG.debug("Successfully create a port {}.".format(port))
             except n_exceptions.NeutronClientException as ex:
+                # REVISIT(yamamoto): We ought to report to a user.
+                # eg. marking the pod error.
                 LOG.error(_LE("Error happened during creating a"
                               " Neutron port: {0}").format(ex))
                 raise
@@ -240,6 +253,37 @@ class K8sPodsWatcher(K8sAPIWatcher):
             else:
                 LOG.debug('Deletion event without neutron port information. '
                           'Ignoring it...')
+        elif event_type == MODIFIED_EVENT:
+            old_port = annotations.get(constants.K8S_ANNOTATION_PORT_KEY)
+            sg = labels.get(constants.K8S_LABEL_SECURITY_GROUP_KEY)
+            if old_port:
+                if sg:
+                    port_id = jsonutils.loads(old_port)['id']
+                    update_req = {
+                        'security_groups': [sg],
+                    }
+                    try:
+                        updated_port = yield from self.delegate(
+                            self.neutron.update_port,
+                            port=port_id, body={'port': update_req})
+                        port = updated_port['port']
+                        LOG.debug("Successfully update a port {}.".format(port))
+                    except n_exceptions.NeutronClientException as ex:
+                        # REVISIT(yamamoto): We ought to report to a user.
+                        # eg. marking the pod error.
+                        LOG.error(_LE("Error happened during updating a"
+                                      " Neutron port: {0}").format(ex))
+                        raise
+                    # REVISIT(yamamoto): Do we want to update the annotation
+                    # with the new SG?  Probably.  Note that updating
+                    # annotation here would yield another MODIFIED_EVENT.
+                else:
+                    # REVISIT(yamamoto): What to do when the label is removed?
+                    # Unfortunately, neutron doesn't seem to have a convenient
+                    # way to restore the default SG.
+                    # An alternative is to map the lack of label to no SG,
+                    # rather than the default SG.
+                    LOG.debug("Ignoring MODIFIED_EVENT with no SG label")
 
 
 class K8sServicesWatcher(K8sAPIWatcher):

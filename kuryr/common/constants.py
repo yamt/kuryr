@@ -31,3 +31,7 @@ KURYR_EXISTING_NEUTRON_NET = 'kuryr.net.existing'
 
 K8S_ANNOTATION_PORT_KEY = 'kuryr.org/neutron-port'
 K8S_ANNOTATION_SUBNETS_KEY = 'kuryr.org/neutron-subnets'
+
+# REVISIT(yamamoto): Which of label or annotation is more suitable for
+# this purpose?  Do we want to allow users to specify multiple SGs?
+K8S_LABEL_SECURITY_GROUP_KEY = 'kuryr.org/neutron-security-group'
