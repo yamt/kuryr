@@ -11,6 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import abc
 import asyncio
 import copy
 import uuid
@@ -19,6 +20,7 @@ import ddt
 from mox3 import mox
 from oslo_serialization import jsonutils
 import requests
+import six
 
 from kuryr.common import config
 from kuryr.common import constants
@@ -144,12 +146,13 @@ class _FakeSuccessResponse(object):
     content = ""
 
 
-class TestK8sPodsWatcher(base.TestKuryrBase):
-    """The unit test for the translate method of TestK8sPodsWatcher.
+@six.add_metaclass(abc.ABCMeta)
+class TestK8sWatchersBase(base.TestKuryrBase):
+    """The base class for the unit tests of the K8s watcher classes.
 
-    The following tests validate if translate method works appropriately.
+    This class has the common fake data and utility methods for each watcher
+    test.
     """
-
     fake_pod_object = {
         "kind": "Pod",
         "apiVersion": "v1",
@@ -163,7 +166,7 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
             "creationTimestamp": "2016-03-02T06:25:27Z",
             "labels": {
                 "app": "guestbook",
-                "tier": "frontend"
+                "tier": "frontend",
             },
             "annotations": {
                 "kubernetes.io/created-by": {
@@ -175,22 +178,48 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
                         "name": "frontend",
                         "uid": "8e1657d9-e03f-11e5-8c79-42010af00003",
                         "apiVersion": "v1",
-                        "resourceVersion": "107226"
-                    }
-                }
-            }
-        }
+                        "resourceVersion": "107226",
+                    },
+                },
+            },
+        },
     }
 
+    @abc.abstractproperty
+    def TEST_WATCHER(self):
+        """The watcher class to be tested.
+
+        This is defined as the abstract property and the sub classes derived
+        from this class MUST define this class attribute. This class is used
+        ``setUp`` method to instantiate the fake Raven instance.
+        """
+
     def setUp(self):
-        super(TestK8sPodsWatcher, self).setUp()
+        """Sets up the fake Raven instance registering WATCHER to it.
+
+        This method instantiates the Raven isntance with the watcher class for
+        the test registered, holds the translate method of the watcher binding
+        it to the fake Raven instance and sets up the cleanup processes. The
+        fake Raven instance and the translate method of the watcher class
+        specified in ``TEST_WATCHER`` are accessible by ``self.fake_raven``
+        and ``self.translate`` for each other.
+        """
+        super(TestK8sWatchersBase, self).setUp()
         FakeRaven = raven.register_watchers(
-            watchers.K8sPodsWatcher)(_FakeRaven)
+            self.TEST_WATCHER)(_FakeRaven)
         self.fake_raven = FakeRaven()
         self.fake_raven._ensure_networking_base()
-        self.translate = watchers.K8sPodsWatcher.translate.__get__(
+        self.translate = self.TEST_WATCHER.translate.__get__(
             self.fake_raven, FakeRaven)
         self.addCleanup(self.fake_raven.stop)
+
+
+class TestK8sPodsWatcher(TestK8sWatchersBase):
+    """The unit test for the translate method of TestK8sPodsWatcher.
+
+    The following tests validate if translate method works appropriately.
+    """
+    TEST_WATCHER = watchers.K8sPodsWatcher
 
     def test_translate_added(self):
         """Tests if K8sServicesWatcher.translate works as intended."""
@@ -217,8 +246,7 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
         self.fake_raven.delegate(
             mox.IsA(self.fake_raven.neutron.create_port),
-            {'port': new_port}
-        ).AndReturn(fake_port_future)
+            {'port': new_port}).AndReturn(fake_port_future)
         path = metadata.get('selfLink', '')
         annotations = copy.deepcopy(metadata['annotations'])
         metadata = {}
