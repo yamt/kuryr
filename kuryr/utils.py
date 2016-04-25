@@ -10,6 +10,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import ipaddress
 import os
 import random
 import socket
@@ -18,7 +19,6 @@ import traceback
 
 import flask
 import jsonschema
-
 from neutronclient.common import exceptions as n_exceptions
 from neutronclient.neutron import client
 from neutronclient.v2_0 import client as client_v2
@@ -206,3 +206,25 @@ def get_service_endpoint(namespace, service_name):
     service_endpoint = '/'.join([const.K8S_API_ENDPOINT_V1, 'namespaces',
                                  namespace, 'services', service_name])
     return service_endpoint
+
+
+def get_port_ip_address(neutron_port):
+    """Gets the IP address in the Neutron port object.
+
+    This function inspects if the given port object has the "ip_address"
+    attribute in the toplevel or in its "fixed_ips" object.
+
+    :param neutron_port: The dictionary represents the Neutron port that is not
+                         wrapped by anothor dictionary that has "port"
+                         attribute corresponds to the Neutron port object.
+    :returns: The string representation of the IP address of the port.
+    """
+    ip_address = neutron_port.get('ip_address', '')
+    fixed_ips = neutron_port.get('fixed_ips', [])
+    if not ip_address:
+        for fixed_ip in fixed_ips:
+            if ipaddress.ip_address(fixed_ip['ip_address']).version == 4:
+                ip_address = fixed_ip['ip_address']
+                break
+
+        return ip_address

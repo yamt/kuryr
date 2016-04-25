@@ -105,6 +105,10 @@ raven_opts = [
                       'of ``concurrent.futures.ThreadPoolExecutor`` for more '
                       'details.'),
                default=multiprocessing.cpu_count() * 5),
+    cfg.StrOpt('lb_method', default='ROUND_ROBIN',
+               choices=['ROUND_ROBIN', 'LEAST_CONNECTIONS', 'SOURCE_IP'],
+               help=_('The Neutron Load Balancer algorithm type. One of '
+                      '"ROUND_ROBIN", "LEAST_CONNECTIONS", "SOURCE_IP".')),
 ]
 
 k8s_opts = [

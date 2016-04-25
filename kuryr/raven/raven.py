@@ -388,6 +388,19 @@ class Raven(service.Service):
         return result
 
     @asyncio.coroutine
+    def wait_for(self, time):
+        """Waits for the specified time.
+
+        The watchers or any other users of this class should call this method
+        instead of ``asyncio.sleep``. This method uses the internal event loop
+        and this is scheduled appropriately as well as other coroutines. This
+        method is a coroutine.
+
+        :param time: The waiting time in seconds.
+        """
+        yield from asyncio.sleep(time, loop=self._event_loop)
+
+    @asyncio.coroutine
     def delegate(self, func, *args, **kwargs):
         """Delegates the execution of the passed function to this instance.
 

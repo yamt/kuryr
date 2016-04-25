@@ -22,6 +22,7 @@ import six
 
 from kuryr._i18n import _LE
 from kuryr._i18n import _LW
+from kuryr.common import config
 from kuryr.common import constants
 from kuryr import utils
 
@@ -31,6 +32,28 @@ DELETED_EVENT = 'DELETED'
 MODIFIED_EVENT = 'MODIFIED'
 
 LOG = log.getLogger(__name__)
+
+PATCH_HEADERS = {
+    'Content-Type': 'application/merge-patch+json',
+    'Accept': 'application/json',
+}
+
+
+@asyncio.coroutine
+def _update_annotation(delegator, path, kind, annotations):
+    data = {
+        "kind": kind,
+        "apiVersion": "v1",
+    }
+    metadata = {}
+    metadata.update({'annotations': annotations})
+    data.update({'metadata': metadata})
+
+    response = yield from delegator(
+        requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
+        data=jsonutils.dumps(data), headers=PATCH_HEADERS)
+    assert response.status_code == requests.codes.ok
+    LOG.debug("Successfully updated the annotations.")
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -175,6 +198,21 @@ class K8sPodsWatcher(K8sAPIWatcher):
 
     @asyncio.coroutine
     def translate(self, decoded_json):
+        """Translates a K8s pod into a Neutron port.
+
+        The service translation can be assumed to be done before replication
+        controllers and pods are created based on the "best practice" of K8s
+        resource definition. So in this method pods are translated into ports
+        based on the service information.
+
+        When the port is created, the pod information is updated with the port
+        information to provide the necessary information for the bindings.
+
+        If the pod belongs to the service and the pod is deleted, the
+        associated pool member is deleted as well in the cascaded way.
+
+        :param decoded_json: A pod event to be translated.
+        """
         LOG.debug("Pod notification {0}".format(decoded_json))
         event_type = decoded_json.get('type', '')
         content = decoded_json.get('object', {})
@@ -241,22 +279,9 @@ class K8sPodsWatcher(K8sAPIWatcher):
                 {constants.K8S_ANNOTATION_SUBNET_KEY: jsonutils.dumps(
                     namespace_subnet)})
             if path:
-                data = {
-                    "kind": "Pod",
-                    "apiVersion": "v1",
-                }
-                metadata = {}
-                metadata.update({'annotations': annotations})
-                data.update({'metadata': metadata})
-                headers = {
-                    'Content-Type': 'application/merge-patch+json',
-                    'Accept': 'application/json',
-                }
-                response = yield from self.delegate(
-                    requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
-                    data=jsonutils.dumps(data), headers=headers)
-                assert response.status_code == requests.codes.ok
-                LOG.debug("Successfully updated the annotations.")
+                yield from _update_annotation(self.delegate, path, 'Pod',
+                                              annotations)
+
         elif event_type == DELETED_EVENT:
             neutron_port = jsonutils.loads(
                 annotations.get(constants.K8S_ANNOTATION_PORT_KEY, '{}'))
@@ -505,5 +530,120 @@ class K8sServicesWatcher(K8sAPIWatcher):
     SERVICES_ENDPOINT = constants.K8S_API_ENDPOINT_V1 + '/services'
     WATCH_ENDPOINT = SERVICES_ENDPOINT + '?watch=true'
 
+    @asyncio.coroutine
     def translate(self, decoded_json):
+        """Translates a K8s service into a Neutron Pool and a Neutron VIP.
+
+        The service translation can be assumed to be done before replication
+        controllers and pods are created based on the "best practice" of K8s
+        resource definition. So in this mothod only the Neutorn Pool and the
+        Neutorn VIP are created. The Neutron Pool Members are added in the
+        namespace translations.
+
+        When the Neutron Pool is created, the service is updated with the Pool
+        information in order that the namespace event translator can associate
+        the Neutron Pool Members with the Pool. The namspace event traslator
+        inspects the service information in the apiserver and retrieve the
+        necessary Pool information.
+
+        :param decoded_json: A service event to be translated.
+        """
         LOG.debug("Service notification {0}".format(decoded_json))
+        event_type = decoded_json.get('type', '')
+        content = decoded_json.get('object', {})
+        metadata = content.get('metadata', {})
+        annotations = metadata.get('annotations', {})
+        if event_type == ADDED_EVENT:
+            if constants.K8S_ANNOTATION_POOL_KEY in annotations:
+                LOG.debug('Ignore an ADDED event as the pool already has a '
+                          'neutron port')
+                return
+            service_name = metadata.get('name', '')
+            namespace = metadata.get(
+                'namespace', constants.K8S_DEFAULT_NAMESPACE)
+            cluster_subnet_name = utils.get_subnet_name(namespace)
+            # TODO(tfukushima): Make the following line non-blocking.
+            # Since K8sNamespaceWatcher and K8sPodsWatcher depend on the
+            # blocking requests against Neutron, I just leave this. However,
+            # this should be replaced with the non-blocking call with
+            # self.delegate with some synchronization mechanism.
+            cluster_subnet_response = self.neutron.list_subnets(
+                name=cluster_subnet_name)
+            cluster_subnets = cluster_subnet_response['subnets']
+            if not cluster_subnets:
+                LOG.warning(
+                    _LW('The namespace %s is not translated yet.'), namespace)
+                return
+            cluster_subnet = cluster_subnets[0]
+
+            service_spec = content.get('spec', {})
+            service_type = service_spec.get('type', 'ClusterIP')
+            if service_type != 'ClusterIP':
+                LOG.warning(
+                    _LW('Non-ClusterIP type service is not supported. '
+                        'Ignoring the event.'))
+                return
+
+            service_ports = service_spec.get('ports', [])
+            # Assume there's the only single port spec.
+            port = service_ports[0]
+            protocol = port['protocol']
+            protocol_port = port['targetPort']
+            pool_request = {
+                'pool': {
+                    'name': service_name,
+                    'protocol': protocol,
+                    'subnet_id': cluster_subnet['id'],
+                    'lb_method': config.CONF.raven.lb_method,
+                },
+            }
+            try:
+                created_pool = yield from self.delegate(
+                    self.neutron.create_pool, pool_request)
+                pool = created_pool['pool']
+                LOG.debug('Succeeded to created a pool %s', pool)
+            except n_exceptions.NeutronClientException as ex:
+                LOG.error(_LE("Error happened during creating a"
+                              " Neutron pool: %s"), ex)
+                raise
+
+            path = metadata.get('selfLink', '')
+            annotations.update(
+                {constants.K8S_ANNOTATION_POOL_KEY: jsonutils.dumps(pool)})
+
+            pool_id = pool['id']
+            cluster_ip = service_spec['clusterIP']
+            vip_request = {
+                'vip': {
+                    # name is not necessarily unique and the service name is
+                    # used for the group of the vips.
+                    'name': service_name,
+                    'pool_id': pool_id,
+                    'subnet_id': self._service_subnet['id'],
+                    'address': cluster_ip,
+                    'protocol': protocol,
+                    'protocol_port': protocol_port,
+                },
+            }
+            try:
+                created_vip = yield from self.delegate(
+                    self.neutron.create_vip, vip_request)
+                vip = created_vip['vip']
+                LOG.debug('Succeeded to created a VIP {0}'.format(vip))
+            except n_exceptions.NeutronClientException as ex:
+                LOG.error(_LE("Error happened during creating a"
+                              " Neutron VIP: %s"), ex)
+                try:
+                    yield from self.delegate(
+                        self.neutron.delete_pool, pool_id)
+                except n_exceptions.NeutronClientException as ex:
+                    LOG.error(_LE('Error happened during cleaning up a '
+                                  'Neutron pool: %s on creating the VIP.'), ex)
+                    raise
+                raise
+            annotations.update(
+                {constants.K8S_ANNOTATION_VIP_KEY: jsonutils.dumps(vip)})
+
+            if path:
+                yield from _update_annotation(self.delegate, path, 'Service',
+                                              annotations)

@@ -208,6 +208,40 @@ class TestK8sWatchersBase(base.TestKuryrBase):
         }
     }
 
+    fake_service_object = {
+        "kind": "Service",
+        "apiVersion": "v1",
+        "metadata": {
+            "name": "frontend",
+            "namespace": "default",
+            "selfLink": "/api/v1/namespaces/default/services/frontend",
+            "uid": "7aecfdac-d54c-11e5-8cc5-42010af00002",
+            "resourceVersion": "2074",
+            "creationTimestamp": "2016-02-17T08:00:16Z",
+            "labels": {
+                "app": "guestbook",
+                "tier": "frontend",
+            }
+        },
+        "spec": {
+            "ports": [{
+                "protocol": "TCP",
+                "port": 80,
+                "targetPort": 80
+            }],
+            "selector": {
+                "app": "guestbook",
+                "tier": "frontend"
+            },
+            "clusterIP": "10.0.0.42",
+            "type": "ClusterIP",
+            "sessionAffinity": "None",
+        },
+        "status": {
+            "loadBalancer": {},
+        },
+    }
+
     @abc.abstractproperty
     def TEST_WATCHER(self):
         """The watcher class to be tested.
@@ -506,11 +540,14 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             "type": "ADDED",
             "object": self.fake_pod_object,
         }
+        fake_port_name = fake_pod_added_event['object']['metadata']['name']
+        fake_network_id = self.fake_raven._network['id']
         fake_port_id = str(uuid.uuid4())
+        fake_port_ip_address = '172.16.0.42'
         fake_port = self._get_fake_port(
-            fake_pod_added_event['object']['metadata']['name'],
-            self.fake_raven._network['id'],
-            fake_port_id)['port']
+            fake_port_name, fake_network_id, fake_port_id,
+            neutron_subnet_v4_id=self.fake_raven._subnet['id'],
+            neutron_subnet_v4_address=fake_port_ip_address)['port']
         fake_port_future = asyncio.Future(loop=self.fake_raven._event_loop)
         fake_port_future.set_result({'port': fake_port})
         metadata = fake_pod_added_event['object']['metadata']
@@ -582,11 +619,6 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             "apiVersion": "v1",
             "metadata": metadata,
         }
-        headers = {
-            'Content-Type': 'application/merge-patch+json',
-            'Accept': 'application/json',
-        }
-
         fake_patch_response = _FakeSuccessResponse()
         fake_patch_response_future = asyncio.Future(
             loop=self.fake_raven._event_loop)
@@ -594,7 +626,9 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
         self.fake_raven.delegate(
             requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
             data=jsonutils.dumps(fake_pod_update_data),
-            headers=headers).AndReturn(fake_patch_response_future)
+            headers=watchers.PATCH_HEADERS).AndReturn(
+            fake_patch_response_future)
+
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
             self.translate(fake_pod_added_event))
@@ -627,3 +661,93 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
             self.translate(fake_pod_deleted_event))
+
+
+class TestK8sServicesWatcher(TestK8sWatchersBase):
+    """The unit test for the translate method of K8sServicesWatcher.
+
+    The following tests validate if translate method works appropriately.
+    """
+    TEST_WATCHER = watchers.K8sServicesWatcher
+
+    def test_translate_added(self):
+        """Tests if the translate method works as intended for ADDED events."""
+        fake_service_added_event = {
+            "type": "ADDED",
+            "object": self.fake_service_object,
+        }
+        content = self.fake_service_object
+        metadata = self.fake_service_object['metadata']
+        annotations = metadata.get('annotations', {})
+        service_name = metadata.get('name', '')
+        namespace = metadata.get(
+            'namespace', constants.K8S_DEFAULT_NAMESPACE)
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
+        fake_cluster_subnet_name = utils.get_subnet_name(namespace)
+        self.fake_raven.neutron.list_subnets(
+            name=fake_cluster_subnet_name).AndReturn(
+            {'subnets': [self.fake_raven._subnet]})
+        service_spec = content.get('spec', {})
+        service_ports = service_spec.get('ports', [])
+        port = service_ports[0]
+        protocol = port['protocol']
+        protocol_port = port['targetPort']
+        pool_request = {
+            'pool': {
+                'name': service_name,
+                'protocol': protocol,
+                'subnet_id': self.fake_raven._subnet['id'],
+                'lb_method': config.CONF.raven.lb_method,
+            },
+        }
+        fake_pool_id = str(uuid.uuid4())
+        fake_pool_response = copy.deepcopy(pool_request)
+        fake_pool_response['pool']['id'] = fake_pool_id
+        fake_pool_response_future = asyncio.Future(
+            loop=self.fake_raven._event_loop)
+        fake_pool_response_future.set_result(fake_pool_response)
+
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.create_pool, pool_request).AndReturn(
+            fake_pool_response_future)
+
+        fake_pool = fake_pool_response['pool']
+        annotations.update(
+            {constants.K8S_ANNOTATION_POOL_KEY: jsonutils.dumps(fake_pool)})
+        cluster_ip = service_spec['clusterIP']
+
+        fake_vip_id = str(uuid.uuid4())
+        vip_request = {
+            'vip': {
+                'name': service_name,
+                'pool_id': fake_pool_id,
+                'subnet_id': self.fake_raven._service_subnet['id'],
+                'address': cluster_ip,
+                'protocol': protocol,
+                'protocol_port': protocol_port,
+            },
+        }
+        fake_vip_response = copy.deepcopy(vip_request)
+        fake_vip_response['vip']['id'] = fake_vip_id
+        fake_vip_response_future = asyncio.Future(
+            loop=self.fake_raven._event_loop)
+        fake_vip_response_future.set_result(fake_vip_response)
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.create_vip, vip_request).AndReturn(
+            fake_vip_response_future)
+        fake_vip = fake_vip_response['vip']
+        annotations.update(
+            {constants.K8S_ANNOTATION_VIP_KEY: jsonutils.dumps(fake_vip)})
+
+        path = metadata['selfLink']
+        self.mox.StubOutWithMock(watchers, '_update_annotation')
+        none_future = asyncio.Future(loop=self.fake_raven._event_loop)
+        none_future.set_result(None)
+        watchers._update_annotation(
+            self.fake_raven.delegate, path, 'Service', annotations).AndReturn(
+            none_future)
+
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_service_added_event))

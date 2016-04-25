@@ -63,8 +63,9 @@ def _inject_watch(raven, alternative_watch):
 
 
 class _FakeResponse(object):
-    def __init__(self, content):
+    def __init__(self, content, loop=None):
         self._content = content
+        self._loop = loop
 
     @asyncio.coroutine
     def read_line(self):
@@ -76,6 +77,12 @@ class _FakeResponse(object):
     @asyncio.coroutine
     def read_headers(self):
         return 200, 'OK', {raven.headers.TRANSFER_ENCODING: 'chunked'}
+
+    @asyncio.coroutine
+    def read(self):
+        future = asyncio.Future(loop=self._loop)
+        future.set_result(self._content)
+        return future
 
 
 @asyncio.coroutine
