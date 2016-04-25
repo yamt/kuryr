@@ -123,7 +123,7 @@ class _FakeRaven(raven.Raven):
             self._network['id'],
             name=raven.HARDCODED_NET_NAME + '-' + service_subnet_cidr,
             subnet_v4_id=uuid.uuid4())
-        self.service_subnet = fake_service_subnet['subnet']
+        self._service_subnet = fake_service_subnet['subnet']
 
         self._router = {
             "router": {

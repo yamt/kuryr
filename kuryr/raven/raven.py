@@ -242,7 +242,7 @@ class Raven(service.Service):
             service_subnet = service_subnet_response['subnet']
             LOG.debug('Created a new service subnet {0}'
                       .format(service_subnet))
-        self.service_subnet = service_subnet
+        self._service_subnet = service_subnet
 
         neutron_service_network_id = service_network['id']
         neutron_router_id = namespace_router['id']
