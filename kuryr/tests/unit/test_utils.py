@@ -58,5 +58,5 @@ class TestKuryrUtils(base.TestKuryrBase):
              {'subnet_id': '6607a230-f3eb-4937-b09f-9dd659211139',
               'ip_address': 'fdfa:8456:1afa:0:f816:3eff:fe67:885e'}]
         fixed_ips = utils.get_dict_format_fixed_ips_from_kv_format(
-                        fake_fixed_ips_kv_format)
+            fake_fixed_ips_kv_format)
         self.assertEqual(expected_dict_form, fixed_ips)

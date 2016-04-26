@@ -250,8 +250,9 @@ class TestKuryrNetworkDeleteFailures(base.TestKuryrFailures):
         self.assertIn('NetworkID', decoded_json['Err'])
 
     @data(exceptions.Unauthorized, exceptions.NotFound, exceptions.Conflict)
-    def test_delete_network_with_subnet_deletion_failures(self,
-            GivenException):
+    def test_delete_network_with_subnet_deletion_failures(
+            self, GivenException):
+
         docker_network_id = hashlib.sha256(
             utils.getrandbits(256)).hexdigest()
         self._delete_network_with_subnet_exception(

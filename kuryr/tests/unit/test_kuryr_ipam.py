@@ -84,9 +84,10 @@ class TestKuryrIpam(base.TestKuryrBase):
             'Options': {},
             'V6': False
         }
-        response = self.app.post('/IpamDriver.RequestPool',
-                                content_type='application/json',
-                                data=jsonutils.dumps(fake_request))
+        response = self.app.post(
+            '/IpamDriver.RequestPool',
+            content_type='application/json',
+            data=jsonutils.dumps(fake_request))
 
         self.assertEqual(200, response.status_code)
         decoded_json = jsonutils.loads(response.data)
@@ -111,9 +112,10 @@ class TestKuryrIpam(base.TestKuryrBase):
             'Options': {},
             'V6': False
         }
-        response = self.app.post('/IpamDriver.RequestPool',
-                                content_type='application/json',
-                                data=jsonutils.dumps(fake_request))
+        response = self.app.post(
+            '/IpamDriver.RequestPool',
+            content_type='application/json',
+            data=jsonutils.dumps(fake_request))
 
         self.assertEqual(200, response.status_code)
         decoded_json = jsonutils.loads(response.data)
@@ -137,9 +139,10 @@ class TestKuryrIpam(base.TestKuryrBase):
             'Options': {},
             'V6': True
         }
-        response = self.app.post('/IpamDriver.RequestPool',
-                                content_type='application/json',
-                                data=jsonutils.dumps(fake_request))
+        response = self.app.post(
+            '/IpamDriver.RequestPool',
+            content_type='application/json',
+            data=jsonutils.dumps(fake_request))
 
         self.assertEqual(200, response.status_code)
         decoded_json = jsonutils.loads(response.data)
@@ -156,9 +159,10 @@ class TestKuryrIpam(base.TestKuryrBase):
         fake_request = {
             'PoolID': fake_kuryr_subnetpool_id
         }
-        response = self.app.post('/IpamDriver.ReleasePool',
-                                content_type='application/json',
-                                data=jsonutils.dumps(fake_request))
+        response = self.app.post(
+            '/IpamDriver.ReleasePool',
+            content_type='application/json',
+            data=jsonutils.dumps(fake_request))
 
         self.assertEqual(200, response.status_code)
 
@@ -219,9 +223,10 @@ class TestKuryrIpam(base.TestKuryrBase):
             'Address': '',  # Querying for container address
             'Options': {}
         }
-        response = self.app.post('/IpamDriver.RequestAddress',
-                                content_type='application/json',
-                                data=jsonutils.dumps(fake_request))
+        response = self.app.post(
+            '/IpamDriver.RequestAddress',
+            content_type='application/json',
+            data=jsonutils.dumps(fake_request))
 
         self.assertEqual(200, response.status_code)
         decoded_json = jsonutils.loads(response.data)
@@ -258,7 +263,7 @@ class TestKuryrIpam(base.TestKuryrBase):
         app.neutron.list_subnets(cidr=FAKE_IP4_CIDR).AndReturn(
             fake_subnet_response)
 
-        #faking list_ports and delete_port
+        # faking list_ports and delete_port
         fake_neutron_port_id = str(uuid.uuid4())
         fake_port = base.TestKuryrBase._get_fake_port(
             docker_endpoint_id, neutron_network_id,
@@ -266,9 +271,9 @@ class TestKuryrIpam(base.TestKuryrBase):
             subnet_v4_id,
             neutron_subnet_v4_address=fake_ip4)
         port_request = {
-                'name': 'demo-port',
-                'admin_state_up': True,
-                'network_id': neutron_network_id,
+            'name': 'demo-port',
+            'admin_state_up': True,
+            'network_id': neutron_network_id,
         }
         rel_fixed_ips = port_request['fixed_ips'] = []
         fixed_ip = {'subnet_id': subnet_v4_id}
@@ -291,8 +296,9 @@ class TestKuryrIpam(base.TestKuryrBase):
             'Address': fake_ip4
         }
 
-        response = self.app.post('/IpamDriver.ReleaseAddress',
-                                content_type='application/json',
-                                data=jsonutils.dumps(fake_request))
+        response = self.app.post(
+            '/IpamDriver.ReleaseAddress',
+            content_type='application/json',
+            data=jsonutils.dumps(fake_request))
 
         self.assertEqual(200, response.status_code)

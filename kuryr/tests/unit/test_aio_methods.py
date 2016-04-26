@@ -26,7 +26,7 @@ from kuryr.tests.unit import base
 @ddt.ddt
 class TestAIOMethods(base.TestKuryrBase, test_utils.TestCase):
     data = (b'It is a truth universally acknowledged, that a single man in '
-        b'possession of a good fortune, must be in want of a wife.')
+            b'possession of a good fortune, must be in want of a wife.')
     """The unit test for Raven's asynchronous IO for http requests"""
     def setUp(self):
         self.loop = asyncio.new_event_loop()

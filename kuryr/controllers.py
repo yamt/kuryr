@@ -23,12 +23,14 @@ from oslo_concurrency import processutils
 from oslo_config import cfg
 from oslo_utils import excutils
 
+from kuryr._i18n import _LE
+from kuryr._i18n import _LI
+from kuryr._i18n import _LW
 from kuryr import app
 from kuryr import binding
 from kuryr.common import config
 from kuryr.common import constants as const
 from kuryr.common import exceptions
-from kuryr._i18n import _LE, _LI, _LW
 from kuryr import schemata
 from kuryr import utils
 
@@ -118,8 +120,8 @@ def check_for_neutron_ext_support():
     except n_exceptions.NeutronClientException as e:
         if e.status_code == n_exceptions.NotFound.status_code:
             raise exceptions.MandatoryApiMissing(
-                            "Neutron extension with alias '{0}' not found"
-                            .format(MANDATORY_NEUTRON_EXTENSION))
+                "Neutron extension with alias '{0}' not found".format(
+                    MANDATORY_NEUTRON_EXTENSION))
 
 
 # TODO(tfukushima): Retrieve the following subnet names from the config file.
@@ -278,11 +280,12 @@ def _update_port(port, endpoint_id):
     port['name'] = utils.get_neutron_port_name(endpoint_id)
     try:
         response_port = app.neutron.update_port(
-                port['id'],
-                {'port': {
-                    'name': port['name'],
-                    'device_owner': const.DEVICE_OWNER,
-                    'device_id': endpoint_id}})
+            port['id'],
+            {'port': {
+                'name': port['name'],
+                'device_owner': const.DEVICE_OWNER,
+                'device_id': endpoint_id}}
+        )
     except n_exceptions.NeutronClientException as ex:
         app.logger.error(_LE("Error happend during creating a "
                              "Neutron port: {0}").format(ex))
@@ -307,8 +310,10 @@ def _get_fixed_ips_by_interface_cidr(subnets, interface_cidrv4,
         fixed_ips.extend(fixed_ip)
 
 
-def _create_or_update_port(neutron_network_id, endpoint_id,
+def _create_or_update_port(
+        neutron_network_id, endpoint_id,
         interface_cidrv4, interface_cidrv6, interface_mac):
+
     response_interface = {}
     subnets = []
     fixed_ips = []
@@ -330,14 +335,14 @@ def _create_or_update_port(neutron_network_id, endpoint_id,
             "Multiple subnets exist for the cidrs {0} and {1}"
             .format(interface_cidrv4, interface_cidrv6))
 
-    _get_fixed_ips_by_interface_cidr(subnets, interface_cidrv4,
-        interface_cidrv6, fixed_ips)
+    _get_fixed_ips_by_interface_cidr(
+        subnets, interface_cidrv4, interface_cidrv6, fixed_ips)
     filtered_ports = app.neutron.list_ports(fixed_ips=fixed_ips)
     num_port = len(filtered_ports.get('ports', []))
     if not num_port:
         fixed_ips = utils.get_dict_format_fixed_ips_from_kv_format(fixed_ips)
-        response_port = _create_port(endpoint_id, neutron_network_id,
-            interface_mac, fixed_ips)
+        response_port = _create_port(
+            endpoint_id, neutron_network_id, interface_mac, fixed_ips)
     elif num_port == 1:
         port = filtered_ports['ports'][0]
         response_port = _update_port(port, endpoint_id)
@@ -496,8 +501,9 @@ def network_driver_create_network():
     if 'Gateway' in json_data['IPv4Data'][0]:
         gateway_cidr = json_data['IPv4Data'][0]['Gateway']
         gateway_ip = gateway_cidr.split('/')[0]
-        app.logger.debug("gateway_cidr {0}, gateway_ip {1}"
-            .format(gateway_cidr, gateway_ip))
+        app.logger.debug(
+            "gateway_cidr {0}, gateway_ip {1}".format(
+                gateway_cidr, gateway_ip))
 
     neutron_uuid = None
     neutron_name = None
@@ -990,7 +996,7 @@ def ipam_request_pool():
             prefixes = pool['prefixes']
             if len(prefixes) > 1:
                 app.logger.warning(_LW("More than one prefixes present. "
-                                     "Picking first one."))
+                                       "Picking first one."))
             cidr = netaddr.IPNetwork(prefixes[0])
             subnet_cidr = _get_subnet_cidr_using_cidr(cidr)
         else:

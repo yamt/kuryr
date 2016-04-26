@@ -104,8 +104,10 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
         self.pod_container_id = self.cni_args['K8S_POD_INFRA_CONTAINER_ID']
 
     def _get_pod_annotaions(self):
-        k8s_url = "%s/api/v1/namespaces/%s/pods/%s" % (CONF.k8s.api_root,
-            self.pod_namespace, self.pod_name)
+        k8s_url = "%s/api/v1/namespaces/%s/pods/%s" % (
+            CONF.k8s.api_root,
+            self.pod_namespace,
+            self.pod_name)
         LOG.debug('URL of the pod %s', k8s_url)
         response = requests.get(k8s_url)
         pod = response.json()

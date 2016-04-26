@@ -147,9 +147,10 @@ class TestRaven(base.TestKuryrBase):
 
         callback = wrapper(_callback)
 
-        responses = collections.deque(({'foo': 'bar'},
-                     {1: '1', 2: '2'},
-                     {'kind': 'Pod', 'metadata': {}}))
+        responses = collections.deque((
+            {'foo': 'bar'},
+            {1: '1', 2: '2'},
+            {'kind': 'Pod', 'metadata': {}}))
 
         r = raven.Raven()
         r._reconnect = False
@@ -163,7 +164,7 @@ class TestRaven(base.TestKuryrBase):
         self.mox.StubOutWithMock(raven.methods, 'get')
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
                           decoder=raven._utf8_decoder).AndReturn(
-                          _fake_get_response(responses))
+                              _fake_get_response(responses))
 
         watcher_callback.__get__(r, r.__class__).AndReturn(callback)
 
@@ -204,8 +205,8 @@ class TestRaven(base.TestKuryrBase):
         subnet_id = '6245fe1e-8ed2-4f51-8ea9-e78e410bef3b'
         tenant_id = '511b9871-66df-448c-bea1-de85c95e3289'
         r.neutron.create_security_group(
-            {'security_group': {'name': raven.HARDCODED_SG_NAME}}) \
-                .AndReturn({'security_group': {'id': sg_id}})
+            {'security_group': {'name': raven.HARDCODED_SG_NAME}}).AndReturn(
+                {'security_group': {'id': sg_id}})
         for ethertype in ['IPv4', 'IPv6']:
             r.neutron.create_security_group_rule(
                 {'security_group_rule': {
@@ -294,12 +295,12 @@ class TestRaven(base.TestKuryrBase):
         self.mox.StubOutWithMock(raven.methods, 'get')
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
                           decoder=raven._utf8_decoder).AndReturn(
-                          _fake_get_response(first_responses))
+                              _fake_get_response(first_responses))
 
         # We'll reconnect once
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
                           decoder=raven._utf8_decoder).AndReturn(
-                          _fake_get_response(final_responses))
+                              _fake_get_response(final_responses))
 
         watcher_callback.__get__(r, r.__class__).AndReturn(callback)
 
@@ -357,12 +358,12 @@ class TestRaven(base.TestKuryrBase):
         self.mox.StubOutWithMock(raven.methods, 'get')
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
                           decoder=raven._utf8_decoder).AndReturn(
-                          _fake_get_response(first_responses))
+                              _fake_get_response(first_responses))
 
         # We'll reconnect once
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
                           decoder=raven._utf8_decoder).AndReturn(
-                          _fake_get_response(final_responses))
+                              _fake_get_response(final_responses))
 
         watcher_callback.__get__(r, r.__class__).AndReturn(callback)
 
@@ -411,13 +412,13 @@ class TestRaven(base.TestKuryrBase):
                 'shared': False}])
         raven.controllers._get_subnets_by_attrs(
             unique=False, cidr=subnet_cidr).AndReturn([{
-                        'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
-                                                 subnet_cidr),
-                        'network_id': net_id,
-                        'tenant_id': tenant_id,
-                        'cidr': subnet_cidr,
-                        'id': subnet_id,
-                        'enable_dhcp': True}])
+                'name': '{0}-{1}'.format(raven.HARDCODED_NET_NAME,
+                                         subnet_cidr),
+                'network_id': net_id,
+                'tenant_id': tenant_id,
+                'cidr': subnet_cidr,
+                'id': subnet_id,
+                'enable_dhcp': True}])
         service_subnet = {
             'name': '-'.join([raven.HARDCODED_NET_NAME, service_subnet_cidr]),
             'network_id': net_id,

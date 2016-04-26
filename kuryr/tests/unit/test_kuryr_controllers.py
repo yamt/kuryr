@@ -64,7 +64,7 @@ class TestKuryrControllerHelpers(base.TestKuryrBase):
 
         self.mox.ReplayAll()
         controllers._get_subnets_by_attrs(
-                unique=True, network_id=net_id, cidr='192.168.1.0/24')
+            unique=True, network_id=net_id, cidr='192.168.1.0/24')
 
     @ddt.data(
         {'subnets': [{
@@ -160,28 +160,28 @@ class TestKuryrControllerHelpers(base.TestKuryrBase):
             lambda: controllers._get_subnets_by_attrs(
                 unique=True, network_id=net_id))
 
-    @ddt.data({'networks':
-        [{'admin_state_up': True,
-          'id': '3a06dfc7-d239-4aad-9a57-21cd171c72e5',
-          'name': 'network_1',
-          'shared': False,
-          'status': 'ACTIVE',
-          'subnets': [],
-          'tenant_id': 'c1210485b2424d48804aad5d39c61b8f'},
-         {'admin_state_up': True,
-          'id': '7db8c5a4-6eb0-478d-856b-7cfda2b25e13',
-          'name': 'network-2',
-          'shared': False,
-          'status': 'ACTIVE',
-          'subnets': [],
-          'tenant_id': 'c1210485b2424d48804aad5d39c61b8f'},
-         {'admin_state_up': True,
-          'id': 'afc75773-640e-403c-9fff-62ba98db1f19',
-          'name': 'network_3',
-          'shared': True,
-          'status': 'ACTIVE',
-          'subnets': ['e12f0c45-46e3-446a-b207-9474b27687a6'],
-          'tenant_id': 'ed680f49ff714162ab3612d7876ffce5'}]})
+    @ddt.data({'networks': [
+        {'admin_state_up': True,
+         'id': '3a06dfc7-d239-4aad-9a57-21cd171c72e5',
+         'name': 'network_1',
+         'shared': False,
+         'status': 'ACTIVE',
+         'subnets': [],
+         'tenant_id': 'c1210485b2424d48804aad5d39c61b8f'},
+        {'admin_state_up': True,
+         'id': '7db8c5a4-6eb0-478d-856b-7cfda2b25e13',
+         'name': 'network-2',
+         'shared': False,
+         'status': 'ACTIVE',
+         'subnets': [],
+         'tenant_id': 'c1210485b2424d48804aad5d39c61b8f'},
+        {'admin_state_up': True,
+         'id': 'afc75773-640e-403c-9fff-62ba98db1f19',
+         'name': 'network_3',
+         'shared': True,
+         'status': 'ACTIVE',
+         'subnets': ['e12f0c45-46e3-446a-b207-9474b27687a6'],
+         'tenant_id': 'ed680f49ff714162ab3612d7876ffce5'}]})
     def test__get_networks_by_attrs_unique_exc(self, response):
         self.mox.StubOutWithMock(controllers.app.neutron, 'list_networks')
         controllers.app.neutron.list_networks(status='ACTIVE').AndReturn(

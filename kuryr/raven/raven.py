@@ -282,12 +282,14 @@ class Raven(service.Service):
             try:
                 content = yield from response.read_line()
             except asyncio.CancelledError:
-                LOG.debug('Watch task of endpoint {} has been cancelled'
-                    .format(endpoint))
+                LOG.debug(
+                    'Watch task of endpoint {} has been cancelled'.format(
+                        endpoint))
                 break
             if content is None:
-                LOG.debug('Watch task of endpoint {} has arrived at EOF'
-                    .format(endpoint))
+                LOG.debug(
+                    'Watch task of endpoint {} has arrived at EOF'.format(
+                        endpoint))
 
                 # Let's schedule another watch
                 if self._reconnect:

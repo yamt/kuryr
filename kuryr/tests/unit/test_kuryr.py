@@ -44,7 +44,8 @@ class TestKuryr(base.TestKuryrBase):
     - POST /NetworkDriver.DiscoverNew
     - POST /NetworkDriver.DiscoverDelete
     """
-    @ddt.data(('/Plugin.Activate', constants.SCHEMA['PLUGIN_ACTIVATE']),
+    @ddt.data(
+        ('/Plugin.Activate', constants.SCHEMA['PLUGIN_ACTIVATE']),
         ('/NetworkDriver.GetCapabilities',
          {'Scope': config.CONF.capability_scope}),
         ('/NetworkDriver.DiscoverNew', constants.SCHEMA['SUCCESS']),
@@ -339,7 +340,8 @@ class TestKuryr(base.TestKuryrBase):
         }
 
         self.mox.StubOutWithMock(app.neutron, 'list_subnets')
-        app.neutron.list_subnets(network_id=fake_neutron_net_id,
+        app.neutron.list_subnets(
+            network_id=fake_neutron_net_id,
             cidr='192.168.1.0/24').AndReturn(fake_subnetv4_response)
         app.neutron.list_subnets(
             network_id=fake_neutron_net_id,

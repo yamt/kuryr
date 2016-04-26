@@ -199,8 +199,10 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
             'security_groups': [self.fake_raven._default_sg],
         }
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
-        self.fake_raven.delegate(mox.IsA(self.fake_raven.neutron.create_port),
-                            {'port': new_port}).AndReturn(fake_port_future)
+        self.fake_raven.delegate(
+            mox.IsA(self.fake_raven.neutron.create_port),
+            {'port': new_port}
+        ).AndReturn(fake_port_future)
         path = metadata.get('selfLink', '')
         annotations = copy.deepcopy(metadata['annotations'])
         metadata = {}
@@ -234,7 +236,9 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
             self.translate(fake_pod_added_event))
 
     def test_translate_deleted(self):
-        """Tests if K8sServicesWatcher.translate works as intended for DELETED.
+        """Tests DELETED events for watcher.
+
+        Tests if K8sServicesWatcher.translate works as intended for DELETED.
         """
         fake_pod_deleted_event = {
             "type": "DELETED",

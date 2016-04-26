@@ -70,7 +70,8 @@ class TestCNIHelpers(base.TestKuryrBase):
 @ddt.ddt
 class TestNeutronCNIDriver(base.TestKuryrBase):
     basic_env = {
-        cni_const.ARGS: ('K8S_POD_NAMESPACE=default;'
+        cni_const.ARGS: (
+            'K8S_POD_NAMESPACE=default;'
             'K8S_POD_NAME=nginx-app-722l8;'
             'K8S_POD_INFRA_CONTAINER_ID=8ceb00926acf251b34d70065a6158370953ab9'
             '09b0745f5f4647ee6b9ec5c250;'),

@@ -98,7 +98,7 @@ raven_opts = [
 
 k8s_opts = [
     cfg.StrOpt('api_root',
-               default=os.environ.get('K8S_API','http://localhost:8080')),
+               default=os.environ.get('K8S_API', 'http://localhost:8080')),
     # NOTE(tfukushima): FLANNEL_NET is used in the deployment scripts.
     #   https://github.com/kubernetes/kubernetes/search?utf8=%E2%9C%93&q=flannel_net  # noqa
     cfg.StrOpt('cluster_subnet',
