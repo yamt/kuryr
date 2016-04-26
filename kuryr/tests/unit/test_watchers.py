@@ -711,6 +711,7 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             self.translate(fake_pod_deleted_event))
 
 
+@ddt.ddt
 class TestK8sServicesWatcher(TestK8sWatchersBase):
     """The unit test for the translate method of K8sServicesWatcher.
 
@@ -799,6 +800,61 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
             self.translate(fake_service_added_event))
+
+    @ddt.data((False, False), (True, False), (False, True), (True, True))
+    @ddt.unpack
+    def test_translate_deleted(self, does_pool_exist, does_vip_exist):
+        """Tests if the translate method works for DELETED events."""
+        fake_service_deleted_event = {
+            "type": watchers.DELETED_EVENT,
+            "object": copy.deepcopy(self.fake_service_object),
+        }
+
+        metadata = fake_service_deleted_event['object']['metadata']
+        annotations = metadata.get('annotations', {})
+        fake_pool_id = str(uuid.uuid4())
+        fake_pool = {'id': fake_pool_id}
+        annotations.update(
+            {constants.K8S_ANNOTATION_POOL_KEY: jsonutils.dumps(fake_pool)})
+        fake_vip_id = str(uuid.uuid4())
+        fake_vip = {'id': fake_vip_id}
+        annotations.update(
+            {constants.K8S_ANNOTATION_VIP_KEY: jsonutils.dumps(fake_vip)})
+        metadata.update({'annotations': annotations})
+
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        none_future = asyncio.Future(loop=self.fake_raven._event_loop)
+        none_future.set_result(None)
+
+        fake_vips_future = asyncio.Future(loop=self.fake_raven._event_loop)
+        if does_pool_exist:
+            fake_vips_future.set_result({'vips': [fake_vip]})
+        else:
+            fake_vips_future.set_result({'vips': []})
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_vips, id=fake_vip_id).AndReturn(
+            fake_vips_future)
+        if does_pool_exist:
+            self.fake_raven.delegate(
+                self.fake_raven.neutron.delete_vip, fake_vip_id).AndReturn(
+                none_future)
+
+        fake_pools_future = asyncio.Future(loop=self.fake_raven._event_loop)
+        if does_vip_exist:
+            fake_pools_future.set_result({'pools': [fake_pool]})
+        else:
+            fake_pools_future.set_result({'pools': []})
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_pools, id=fake_pool_id).AndReturn(
+            fake_pools_future)
+        if does_vip_exist:
+            self.fake_raven.delegate(
+                self.fake_raven.neutron.delete_pool, fake_pool_id).AndReturn(
+                none_future)
+
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_service_deleted_event))
 
 
 @ddt.ddt

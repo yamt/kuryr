@@ -652,6 +652,57 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 yield from _update_annotation(self.delegate, path, 'Service',
                                               annotations)
 
+        elif event_type == DELETED_EVENT:
+            neutron_pool = jsonutils.loads(
+                annotations.get(constants.K8S_ANNOTATION_POOL_KEY, '{}'))
+            if not neutron_pool:
+                LOG.debug('Deletion event without neutron pool information. '
+                          'Ignoring it.')
+                return
+            neutron_vip = jsonutils.loads(
+                annotations.get(constants.K8S_ANNOTATION_VIP_KEY, '{}'))
+            if not neutron_vip:
+                LOG.debug('Deletion event without neutron VIP information. '
+                          'Ignoring it.')
+                return
+
+            # VIP should be delete before the pool.
+            try:
+                vip_id = neutron_vip['id']
+                neutron_vips_response = yield from self.delegate(
+                    self.neutron.list_vips, id=vip_id)
+                neutron_vips = neutron_vips_response['vips']
+                if neutron_vips:
+                    yield from self.delegate(self.neutron.delete_vip, vip_id)
+                else:
+                    LOG.warning(_LW("The VIP {0} doesn't exist. Ignoring the "
+                                    "deletion of the VIP.")
+                                .format(vip_id))
+            except n_exceptions.NeutronClientException as ex:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_LE("Error happened during deleting a"
+                                  " Neutron VIP: {0}").format(ex))
+            LOG.debug('Successfully deleted the Neutron VIP {0}'
+                      .format(neutron_vip))
+
+            try:
+                pool_id = neutron_pool['id']
+                neutron_pools_response = yield from self.delegate(
+                    self.neutron.list_pools, id=pool_id)
+                neutron_pools = neutron_pools_response['pools']
+                if neutron_pools:
+                    yield from self.delegate(self.neutron.delete_pool, pool_id)
+                else:
+                    LOG.warning(_LW("The pool {0} doesn't exist. Ignoring the "
+                                    "deletion of the pool.")
+                                .format(vip_id))
+            except n_exceptions.NeutronClientException as ex:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_LE("Error happened during deleting a"
+                                  " Neutron pool: {0}").format(ex))
+            LOG.debug('Successfully deleted the Neutron pool {0}'
+                      .format(neutron_pool))
+
 
 class K8sEndpointsWatcher(K8sAPIWatcher):
     """An endpoints watcher.
