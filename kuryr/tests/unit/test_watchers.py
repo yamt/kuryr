@@ -173,8 +173,7 @@ class TestK8sPodsWatcher(base.TestKuryrBase):
         self.fake_raven._ensure_networking_base()
         self.translate = watchers.K8sPodsWatcher.translate.__get__(
             self.fake_raven, FakeRaven)
-        self.addCleanup(self.fake_raven._event_loop.stop)
-        self.addCleanup(self.fake_raven._event_loop.close)
+        self.addCleanup(self.fake_raven.stop)
 
     def test_translate_added(self):
         """Tests if K8sServicesWatcher.translate works as intended."""

@@ -14,6 +14,7 @@
 Routines for configuring Kuryr
 """
 
+import multiprocessing
 import os
 
 from oslo_config import cfg
@@ -94,6 +95,16 @@ binding_opts = [
 raven_opts = [
     cfg.StrOpt('logfile_path',
                default='/var/log/kuryr/raven.log'),
+    cfg.IntOpt('max_workers',
+               help=_('The maximum number of the workers used by the executor '
+                      'of the event loop. The executor is thread-based and it '
+                      'multiplexes the I/O operations and makes them '
+                      'asynchronous. This option determs the concurrency '
+                      'level and usually it is set the number of the '
+                      'processors multiplied by five. See the documentation '
+                      'of ``concurrent.futures.ThreadPoolExecutor`` for more '
+                      'details.'),
+               default=multiprocessing.cpu_count() * 5),
 ]
 
 k8s_opts = [

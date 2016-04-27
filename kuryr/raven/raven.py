@@ -13,6 +13,7 @@
 
 import asyncio
 import collections
+from concurrent import futures
 import functools
 import hashlib
 import signal
@@ -88,7 +89,11 @@ class Raven(service.Service):
 
     def __init__(self):
         super(Raven, self).__init__()
+        self._executor = futures.ThreadPoolExecutor(
+            max_workers=config.CONF.raven.max_workers)
         self._event_loop = asyncio.new_event_loop()
+        self._event_loop.set_default_executor(
+            self._executor)
         self._event_cache = k_collections.Cache()
         self._tasks = {}
         self._reconnect = True
@@ -229,6 +234,8 @@ class Raven(service.Service):
                 task.cancel()
         if self._event_loop.is_running():
             self._event_loop.stop()
+        self._executor.shutdown(wait=True)
+        self._event_loop.close()
 
         super(Raven, self).stop(graceful)
         LOG.debug('Stopped the service: {0}'.format(self.__class__.__name__))
@@ -257,7 +264,7 @@ class Raven(service.Service):
         # function that takes no argument here.
         partiall_applied_func = functools.partial(func, *args, **kwargs)
         result = yield from self._event_loop.run_in_executor(
-            None, partiall_applied_func)
+            self._executor, partiall_applied_func)
         return result
 
     @asyncio.coroutine
