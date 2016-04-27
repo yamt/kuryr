@@ -61,3 +61,6 @@ contrib/vagrant/user_local.conf
 
 # Coverage created directory
 .cover/
+
+tools/test-results
+tools/test-results.xml
