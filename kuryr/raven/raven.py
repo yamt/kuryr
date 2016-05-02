@@ -22,7 +22,6 @@ import traceback
 
 import netaddr
 from oslo_log import log
-from oslo_serialization import jsonutils
 from oslo_service import service
 import requests
 
@@ -34,6 +33,7 @@ from kuryr import controllers
 from kuryr.raven.aio import headers
 from kuryr.raven.aio import methods
 from kuryr.raven import watchers
+from kuryr import utils
 
 
 LOG = log.getLogger(__name__)
@@ -271,7 +271,7 @@ class Raven(service.Service):
     def watch(self, endpoint, callback):
         response = yield from methods.get(endpoint=endpoint,
                                           loop=self._event_loop,
-                                          decoder=_utf8_decoder)
+                                          decoder=utils.utf8_json_decoder)
 
         # Get headers
         status, reason, hdrs = yield from response.read_headers()
@@ -332,10 +332,6 @@ class Raven(service.Service):
                     LOG.debug('Watching endpoint %s was cancelled during '
                               'callback execution.', endpoint)
                     break
-
-
-def _utf8_decoder(content):
-    return jsonutils.loads(content.decode('utf8'))
 
 
 def run_raven():

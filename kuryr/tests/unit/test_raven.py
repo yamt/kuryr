@@ -22,6 +22,7 @@ from oslo_service import service
 from kuryr.common import config
 from kuryr.raven import raven
 from kuryr.tests.unit import base
+from kuryr import utils
 
 
 SLEEP_TIME_IN_SEC = 0.5
@@ -163,8 +164,8 @@ class TestRaven(base.TestKuryrBase):
 
         self.mox.StubOutWithMock(raven.methods, 'get')
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
-                          decoder=raven._utf8_decoder).AndReturn(
-                              _fake_get_response(responses))
+                          decoder=utils.utf8_json_decoder).AndReturn(
+            _fake_get_response(responses))
 
         watcher_callback.__get__(r, r.__class__).AndReturn(callback)
 
@@ -294,13 +295,13 @@ class TestRaven(base.TestKuryrBase):
 
         self.mox.StubOutWithMock(raven.methods, 'get')
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
-                          decoder=raven._utf8_decoder).AndReturn(
-                              _fake_get_response(first_responses))
+                          decoder=utils.utf8_json_decoder).AndReturn(
+            _fake_get_response(first_responses))
 
         # We'll reconnect once
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
-                          decoder=raven._utf8_decoder).AndReturn(
-                              _fake_get_response(final_responses))
+                          decoder=utils.utf8_json_decoder).AndReturn(
+            _fake_get_response(final_responses))
 
         watcher_callback.__get__(r, r.__class__).AndReturn(callback)
 
@@ -357,13 +358,13 @@ class TestRaven(base.TestKuryrBase):
 
         self.mox.StubOutWithMock(raven.methods, 'get')
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
-                          decoder=raven._utf8_decoder).AndReturn(
-                              _fake_get_response(first_responses))
+                          decoder=utils.utf8_json_decoder).AndReturn(
+            _fake_get_response(first_responses))
 
         # We'll reconnect once
         raven.methods.get(endpoint=endpoint, loop=r._event_loop,
-                          decoder=raven._utf8_decoder).AndReturn(
-                              _fake_get_response(final_responses))
+                          decoder=utils.utf8_json_decoder).AndReturn(
+            _fake_get_response(final_responses))
 
         watcher_callback.__get__(r, r.__class__).AndReturn(callback)
 
