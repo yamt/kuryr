@@ -98,20 +98,17 @@ def cleanup_veth(ifname):
         return None
 
 
-def _make_up_veth(peer_veth, neutron_port, neutron_subnets,
+def _make_up_veth(peer_veth, neutron_port, neutron_subnet,
                   container_ifname=None):
     """Sets the container side of the veth pair with link and addressing"""
     if container_ifname:
         peer_veth.ifname = container_ifname
-    subnets_dict = {subnet['id']: subnet for subnet in neutron_subnets}
     fixed_ips = neutron_port.get(FIXED_IP_KEY, [])
     if not fixed_ips and (IP_ADDRESS_KEY in neutron_port):
         peer_veth.add_ip(neutron_port[IP_ADDRESS_KEY])
     for fixed_ip in fixed_ips:
         if IP_ADDRESS_KEY in fixed_ip and (SUBNET_ID_KEY in fixed_ip):
-            subnet_id = fixed_ip[SUBNET_ID_KEY]
-            subnet = subnets_dict[subnet_id]
-            cidr = netaddr.IPNetwork(subnet['cidr'])
+            cidr = netaddr.IPNetwork(neutron_subnet['cidr'])
             peer_veth.add_ip(fixed_ip[IP_ADDRESS_KEY], cidr.prefixlen)
     peer_veth.address = neutron_port[MAC_ADDRESS_KEY].lower()
     if not _is_up(peer_veth):
@@ -120,7 +117,7 @@ def _make_up_veth(peer_veth, neutron_port, neutron_subnets,
 
 def _setup_default_gateway(ipdb, peer_veth, default_gateway):
     spec = {
-        'dst': '0.0.0.0/0',
+        'dst': 'default',
         'oif': peer_veth.index,
         'gateway': default_gateway,
     }

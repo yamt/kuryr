@@ -125,7 +125,7 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
             'status': 'ACTIVE',
             'tenant_id': tenant_id}
 
-        subnets = [{
+        subnets = {
             'name': raven.HARDCODED_NET_NAME + '-' + str(net),
             'network_id': net_id,
             'tenant_id': tenant_id,
@@ -136,7 +136,7 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
             'ip_version': 4,
             'cidr': str(net),
             'id': subnet_id,
-            'enable_dhcp': False}]
+            'enable_dhcp': False}
 
         neutron_driver = self.TestKuryrCNIK8sNeutronDriver(
             self.basic_env,
@@ -155,7 +155,7 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
 
         neutron_driver._get_pod_annotaions().AndReturn({
             constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(port),
-            constants.K8S_ANNOTATION_SUBNETS_KEY: jsonutils.dumps(subnets)})
+            constants.K8S_ANNOTATION_SUBNET_KEY: jsonutils.dumps(subnets)})
 
         self.mox.StubOutWithMock(driver.binding, 'port_bind')
         ifname = self.basic_env[cni_const.IFNAME]
