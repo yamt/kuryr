@@ -120,7 +120,7 @@ def _make_up_veth(peer_veth, neutron_port, neutron_subnets,
 
 def _setup_default_gateway(ipdb, peer_veth, default_gateway):
     spec = {
-        'dst': '0.0.0.0/0',
+        'dst': 'default',
         'oif': peer_veth.index,
         'gateway': default_gateway,
     }
