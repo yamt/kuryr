@@ -30,7 +30,8 @@ NEUTRON_NAME_OPTION = 'neutron.net.name'
 KURYR_EXISTING_NEUTRON_NET = 'kuryr.net.existing'
 
 K8S_ANNOTATION_PORT_KEY = 'kuryr.org/neutron-port'
-K8S_ANNOTATION_SUBNETS_KEY = 'kuryr.org/neutron-subnets'
+K8S_ANNOTATION_SUBNET_KEY = 'kuryr.org/neutron-subnet'
+K8S_ANNOTATION_NETWORK_KEY = 'kuryr.org/neutron-network'
 
 # REVISIT(yamamoto): Which of label or annotation is more suitable for
 # this purpose?  Do we want to allow users to specify multiple SGs?

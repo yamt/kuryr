@@ -40,6 +40,7 @@ LOG = log.getLogger(__name__)
 
 HARDCODED_NET_NAME = 'raven-default'
 HARDCODED_SG_NAME = 'raven-default-sg'
+DEFAULT_PREFIX_LEN = 24
 
 
 def register_watchers(*watchers):
@@ -72,7 +73,11 @@ def register_watchers(*watchers):
     return wrapper
 
 
-@register_watchers(watchers.K8sPodsWatcher, watchers.K8sServicesWatcher)
+# TODO(devvesa): refactor current decorator approach to allow not intrusive
+#                way to add more watchers.
+@register_watchers(watchers.K8sPodsWatcher,
+                   watchers.K8sServicesWatcher,
+                   watchers.K8sNamespaceWatcher)
 class Raven(service.Service):
     """A K8s API watcher service watches and translates K8s resources.
 
@@ -150,60 +155,23 @@ class Raven(service.Service):
             LOG.debug('Created a new default SG {0}'.format(sg))
         self._default_sg = sg['id']
 
-    # TODO(tfukushima): Replace this method with the namespace watcher.
-    def _construct_cluster_network(self, namespace_router):
-        networks = controllers._get_networks_by_attrs(
-            unique=False, name=HARDCODED_NET_NAME)
-        if networks:
-            network = networks[0]
-            LOG.debug('Reusing the existing network {0}'.format(network))
+    def _construct_cluster_subnetpool(self, namespace_router):
+        subnetpool_name = HARDCODED_NET_NAME + '-pool'
+        subnetpool_prefix = config.CONF.k8s.cluster_subnet_pool
+        subnetpools = controllers._get_subnetpools_by_attrs(
+            unique=False, name=subnetpool_name)
+        if subnetpools:
+            subnetpool = subnetpools[0]
+            LOG.debug(
+                'Reusing the existing subnet pool %s', subnetpool)
         else:
-            network_response = self.neutron.create_network(
-                {'network': {'name': HARDCODED_NET_NAME}})
-            network = network_response['network']
-            LOG.debug('Created a new network {0}'.format(network))
-        self._network = network
-        subnet_cidr = config.CONF.k8s.cluster_subnet
-        subnets = controllers._get_subnets_by_attrs(
-            unique=False, cidr=subnet_cidr,
-            network_id=network['id'])
-        if subnets:
-            subnet = subnets[0]
-            LOG.debug('Reusing the existing subnet {0}'.format(subnet))
-        else:
-            ip = netaddr.IPNetwork(subnet_cidr)
-            new_subnet = {
-                'name': HARDCODED_NET_NAME + '-' + subnet_cidr,
-                'network_id': network['id'],
-                'ip_version': ip.version,
-                'cidr': subnet_cidr,
-                'gateway_ip': config.CONF.k8s.cluster_gateway_ip,
-                'enable_dhcp': False,
-            }
-            subnet_response = self.neutron.create_subnet(
-                {'subnet': new_subnet})
-            subnet = subnet_response['subnet']
-            LOG.debug('Created a new subnet {0}'.format(subnet))
-        self._subnet = subnet
+            subnetpool_response = self.neutron.create_subnetpool(
+                {'subnetpool': {'name': subnetpool_name,
+                                'prefixes': [subnetpool_prefix],
+                                'default_prefixlen': DEFAULT_PREFIX_LEN}})
+            subnetpool = subnetpool_response['subnetpool']
+        self._subnetpool = subnetpool
 
-        neutron_network_id = network['id']
-        neutron_router_id = namespace_router['id']
-        neutron_subnet_id = subnet['id']
-        filtered_ports = controllers._get_ports_by_attrs(
-            unique=False, device_owner='network:router_interface',
-            device_id=neutron_router_id, network_id=neutron_network_id)
-
-        router_ports = self._get_router_ports_by_subnet_id(
-            neutron_subnet_id, filtered_ports)
-
-        if not router_ports:
-            self.neutron.add_interface_router(
-                neutron_router_id, {'subnet_id': neutron_subnet_id})
-        else:
-            LOG.debug('The subnet {0} is already bound to the router'
-                      .format(neutron_subnet_id))
-
-    # TODO(tfukushima): Replace this method with the namespace watcher.
     def _construct_service_network(self, namespace_router):
         service_network_name = HARDCODED_NET_NAME + '-service'
         service_networks = controllers._get_networks_by_attrs(
@@ -264,14 +232,13 @@ class Raven(service.Service):
                       'router.'
                       .format(service_subnet_id))
 
-    # TODO(tfukushima): Replace this method with the namespace watcher.
     def _ensure_networking_base(self):
         self._create_default_security_group()
 
         router = self._get_or_create_service_router()
         self._router = router
 
-        self._construct_cluster_network(router)
+        self._construct_cluster_subnetpool(router)
         self._construct_service_network(router)
 
     def _task_done_callback(self, task):

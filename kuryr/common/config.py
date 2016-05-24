@@ -110,8 +110,14 @@ raven_opts = [
 k8s_opts = [
     cfg.StrOpt('api_root',
                default=os.environ.get('K8S_API', 'http://localhost:8080')),
+    cfg.StrOpt('cluster_subnet_pool',
+               default=os.environ.get(
+                   'SUBNET_POOL', '192.168.0.0/16')),
     # NOTE(tfukushima): FLANNEL_NET is used in the deployment scripts.
     #   https://github.com/kubernetes/kubernetes/search?utf8=%E2%9C%93&q=flannel_net  # noqa
+    # NOTE(devvesa): This should be deprecated because we are not going to use
+    # it on current namespace approach. But I don't want to interfere on
+    # deployments
     cfg.StrOpt('cluster_subnet',
                default=os.environ.get(
                    'FLANNEL_NET', '172.16.0.0/16')),

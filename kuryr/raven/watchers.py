@@ -21,6 +21,7 @@ import requests
 import six
 
 from kuryr._i18n import _LE
+from kuryr._i18n import _LW
 from kuryr.common import config
 from kuryr.common import constants
 
@@ -183,7 +184,35 @@ class K8sPodsWatcher(K8sAPIWatcher):
         metadata = content.get('metadata', {})
         annotations = metadata.get('annotations', {})
         labels = metadata.get('labels', {})
+        namespace = metadata.get('namespace')
         if event_type == ADDED_EVENT:
+            namespace_network_name = namespace
+            namespace_networks = self.neutron.list_networks(
+                name=namespace_network_name)['networks']
+            if not namespace_networks:
+                # Network of the namespace for this pod is not created yet.
+                # TODO(devvesa): maybe raising an error is better
+                LOG.warning(_LW("Network namespace %(ns)s for pod %(pod)s "
+                                "is not created yet"),
+                            {'ns': namespace_network_name,
+                             'pod': metadata.get('name', '')})
+                return
+
+            namespace_network = namespace_networks[0]
+
+            namespace_subnet_name = namespace + '-subnet'
+            namespace_subnets = self.neutron.list_subnets(
+                name=namespace_subnet_name)['subnets']
+            if not namespace_subnets:
+                # Subnet of the namespace for this pod is not created yet.
+                # TODO(devvesa): maybe raising an error is better
+                LOG.warning(_LW("Subnet namespace %(ns)s for pod %(pod)s "
+                                "is not created yet"),
+                            {'ns': namespace_subnet_name,
+                             'pod': metadata.get('name', '')})
+                return
+            namespace_subnet = namespace_subnets[0]
+
             if constants.K8S_ANNOTATION_PORT_KEY in annotations:
                 LOG.debug("Ignore ADD as the pod already has a neutron port")
                 return
@@ -191,10 +220,10 @@ class K8sPodsWatcher(K8sAPIWatcher):
                             self._default_sg)
             new_port = {
                 'name': metadata.get('name', ''),
-                'network_id': self._network['id'],
+                'network_id': namespace_network['id'],
                 'admin_state_up': True,
                 'device_owner': constants.DEVICE_OWNER,
-                'fixed_ips': [{'subnet_id': self._subnet['id']}],
+                'fixed_ips': [{'subnet_id': namespace_subnet['id']}],
                 'security_groups': [sg]
             }
             try:
@@ -212,8 +241,8 @@ class K8sPodsWatcher(K8sAPIWatcher):
             annotations.update(
                 {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(port)})
             annotations.update(
-                {constants.K8S_ANNOTATION_SUBNETS_KEY: jsonutils.dumps(
-                    [self._subnet])})
+                {constants.K8S_ANNOTATION_SUBNET_KEY: jsonutils.dumps(
+                    namespace_subnet)})
             if path:
                 data = {
                     "kind": "Pod",
@@ -270,6 +299,163 @@ class K8sPodsWatcher(K8sAPIWatcher):
                 # REVISIT(yamamoto): Do we want to update the annotation
                 # with the new SG?  Probably.  Note that updating
                 # annotation here would yield another MODIFIED_EVENT.
+
+
+class K8sNamespaceWatcher(K8sAPIWatcher):
+    """A namespace watcher.
+
+    ``K8sNamespacesWatcher`` makes a GET request against
+    ``/api/v1/namespaces?watch=true`` and receives the event notifications.
+    Then it translates them into requrests against the Neutron API.
+
+    An example of a JSON response follows. It is pretty-printed but the
+    actual response is provided as a single line of JSON.
+    ::
+
+      {
+        "type": "ADDED",
+        "object": {
+          "kind": "Namespace",
+          "apiVersion": "v1",
+          "metadata": {
+            "name": "test",
+            "selfLink": "/api/v1/namespaces/test",
+            "uid": "f094ea6b-06c2-11e6-8128-42010af00003",
+            "resourceVersion": "497821",
+            "creationTimestamp": "2016-04-20T06:41:41Z"
+          },
+          "spec": {
+            "finalizers": [
+              "kubernetes"
+            ]
+          },
+          "status": {
+            "phase": "Active"
+          }
+        }
+      }
+    """
+    NAMESPACES_ENDPOINT = K8S_API_ENDPOINT_V1 + '/namespaces'
+    WATCH_ENDPOINT = NAMESPACES_ENDPOINT + '?watch=true'
+
+    @asyncio.coroutine
+    def translate(self, decoded_json):
+        """Translates a K8s namespace into two Neutron networks and subnets.
+
+        The two pairs of the network and the subnet are created for the cluster
+        network. Each subnet is associated with its dedicated network. They're
+        named in the way the administrator can recognise what they're easily
+        based on the names of the namespaces.
+
+        :param decoded_json: A namespace event to be translated.
+        """
+        LOG.debug("Namespace notification %s", decoded_json)
+        event_type = decoded_json.get('type', '')
+        content = decoded_json.get('object', {})
+        metadata = content.get('metadata', {})
+        annotations = metadata.get('annotations', {})
+        if event_type == ADDED_EVENT:
+
+            namespace_network_name = metadata['name']
+            namespace_subnet_name = namespace_network_name + '-subnet'
+            namespace_networks = self.neutron.list_networks(
+                name=namespace_network_name)['networks']
+            # Ensure the network exists
+            if namespace_networks:
+                namespace_network = namespace_networks[0]
+            else:
+                # NOTE(devvesa): To avoid name collision, we should add the uid
+                #                of the namespace in the neutron tags info
+                network_response = self.neutron.create_network(
+                    {'network': {'name': namespace_network_name}})
+                namespace_network = network_response['network']
+                LOG.debug('Created a new network {0}'.format(
+                    namespace_network))
+                annotations.update(
+                    {constants.K8S_ANNOTATION_NETWORK_KEY: jsonutils.dumps(
+                        namespace_network)})
+
+            # Ensure the subnet exists
+            namespace_subnets = self.neutron.list_subnets(
+                name=namespace_subnet_name)['subnets']
+            if (namespace_subnets
+                    and constants.K8S_ANNOTATION_SUBNET_KEY):
+                namespace_subnet = namespace_subnets[0]
+            else:
+                new_subnet = {
+                    'name': namespace_subnet_name,
+                    'network_id': namespace_network['id'],
+                    'ip_version': 4,  # TODO(devvesa): parametrize this value
+                    'subnetpool_id': self._subnetpool['id'],
+                }
+                subnet_response = self.neutron.create_subnet(
+                    {'subnet': new_subnet})
+                namespace_subnet = subnet_response['subnet']
+                LOG.debug('Created a new subnet %s', namespace_subnet)
+
+            annotations.update(
+                {constants.K8S_ANNOTATION_SUBNET_KEY: jsonutils.dumps(
+                    namespace_subnet)})
+
+            neutron_network_id = namespace_network['id']
+            # Router is created in the subnet pool at raven start time.
+            neutron_router_id = self._router['id']
+            neutron_subnet_id = namespace_subnet['id']
+            filtered_ports = self.neutron.list_ports(
+                device_owner='network:router_interface',
+                device_id=neutron_router_id,
+                network_id=neutron_network_id)['ports']
+
+            router_ports = self._get_router_ports_by_subnet_id(
+                neutron_subnet_id, filtered_ports)
+
+            if not router_ports:
+                self.neutron.add_interface_router(
+                    neutron_router_id, {'subnet_id': neutron_subnet_id})
+            else:
+                LOG.debug('The subnet {0} is already bound to the router'
+                          .format(neutron_subnet_id))
+
+            path = metadata.get('selfLink', '')
+            metadata.update({'annotations': annotations})
+            content.update({'metadata': metadata})
+            headers = {
+                'Content-Type': 'application/merge-patch+json',
+                'Accept': 'application/json',
+            }
+            response = yield from self.delegate(
+                requests.patch, K8S_API_ENDPOINT_BASE + path,
+                data=jsonutils.dumps(content), headers=headers)
+            assert response.status_code == requests.codes.ok
+            LOG.debug("Successfully updated the annotations.")
+        elif event_type == DELETED_EVENT:
+            namespace_network = jsonutils.loads(
+                annotations.get(constants.K8S_ANNOTATION_NETWORK_KEY, '{}'))
+            namespace_subnet = jsonutils.loads(
+                annotations.get(constants.K8S_ANNOTATION_SUBNET_KEY, '{}'))
+
+            neutron_network_id = namespace_network.get('id', None)
+            neutron_router_id = self._router.get('id', None)
+            neutron_subnet_id = namespace_subnet.get('id', None)
+
+            if namespace_network:
+
+                try:
+                    self.neutron.remove_interface_router(
+                        neutron_router_id,
+                        {'subnet_id': neutron_subnet_id})
+                    self.neutron.delete_network(
+                        neutron_network_id)
+                except n_exceptions.NeutronClientException as ex:
+                    LOG.error(_LE("Error happend during deleting a"
+                                  " Neutron Network: {0}"), ex)
+                    raise
+                LOG.debug("Successfully deleted the neutron network.")
+            else:
+                LOG.debug('Deletion event without neutron network information.'
+                          'Ignoring it...')
+
+        LOG.debug('Successfully translated the namespace')
 
 
 class K8sServicesWatcher(K8sAPIWatcher):

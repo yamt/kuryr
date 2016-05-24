@@ -139,6 +139,7 @@ class _FakeRaven(raven.Raven):
                 "id": str(uuid.uuid4()),
             },
         }
+        self._subnetpool = {'id': str(uuid.uuid4())}
 
 
 class _FakeSuccessResponse(object):
@@ -185,6 +186,27 @@ class TestK8sWatchersBase(base.TestKuryrBase):
         },
     }
 
+    fake_namespace_object = {
+        "kind": "Namespace",
+        "apiVersion": "v1",
+        "metadata": {
+            "name": "test",
+            "selfLink": "/api/v1/namespaces/test",
+            "uid": "f094ea6b-06c2-11e6-8128-42010af00003",
+            "resourceVersion": "497821",
+            "creationTimestamp": "2016-04-20T06:41:41Z",
+            "annotations": {}
+        },
+        "spec": {
+            "finalizers": [
+                "kubernetes"
+            ]
+        },
+        "status": {
+            "phase": "Active"
+        }
+    }
+
     @abc.abstractproperty
     def TEST_WATCHER(self):
         """The watcher class to be tested.
@@ -214,6 +236,255 @@ class TestK8sWatchersBase(base.TestKuryrBase):
         self.addCleanup(self.fake_raven.stop)
 
 
+class TestK8sNamespaceWatcher(TestK8sWatchersBase):
+    """The unit test for the translate method of K8sNamespaceWatcher. """
+    TEST_WATCHER = watchers.K8sNamespaceWatcher
+
+    def test_translate_added_create_networks(self):
+
+        # Set the input fake data event
+        fake_namespace_added_event = {
+            "type": "ADDED",
+            "object": self.fake_namespace_object,
+        }
+
+        # Return no networks and create a new one
+        metadata = fake_namespace_added_event['object']['metadata']
+        fake_cluster_network_id = str(uuid.uuid4())
+
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_networks')
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'create_network')
+        self.fake_raven.neutron.list_networks(
+            name=metadata['name']).AndReturn(
+                    {'networks': []})
+        fake_cluster_network_req = {
+            'network': {
+                'name': metadata['name']
+            }
+        }
+        fake_cluster_network_res = {
+            'network': {
+                'name': metadata['name'],
+                'subnets': [],
+                'admin_state_up': False,
+                'shared': False,
+                'status': 'ACTIVE',
+                'tenant_id': str(uuid.uuid4()),
+                'id': fake_cluster_network_id
+            }
+        }
+        self.fake_raven.neutron.create_network(
+            fake_cluster_network_req).AndReturn(
+                fake_cluster_network_res)
+
+        # Return no subnets and create a new one
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'create_subnet')
+        self.fake_raven.neutron.list_subnets(
+                name=metadata['name'] + '-subnet').AndReturn({'subnets': []})
+        fake_cluster_subnet_id = str(uuid.uuid4())
+        fake_cluster_subnet_req = {
+            'subnet': {
+                'name': metadata['name'] + '-subnet',
+                'network_id': fake_cluster_network_id,
+                'ip_version': 4,
+                'subnetpool_id': self.fake_raven._subnetpool['id']
+            }
+        }
+        fake_cluster_subnet_res = copy.deepcopy(
+            fake_cluster_subnet_req)
+
+        fake_cluster_subnet_res['subnet']['id'] = fake_cluster_subnet_id
+        fake_cluster_subnet_res['subnet']['cidr'] = '192.168.2.0/24'
+        fake_cluster_subnet_res['subnet']['enable_dhcp'] = True
+        self.fake_raven._router['id'] = str(uuid.uuid4())
+        self.fake_raven.neutron.create_subnet(
+            fake_cluster_subnet_req).AndReturn(
+                fake_cluster_subnet_res)
+
+        # Return no port and create a new one
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_ports')
+        self.mox.StubOutWithMock(self.fake_raven.neutron,
+                                 'add_interface_router')
+
+        self.fake_raven.neutron.list_ports(
+                device_owner='network:router_interface',
+                device_id=self.fake_raven._router['id'],
+                network_id=fake_cluster_network_id).AndReturn({'ports': []})
+        self.fake_raven.neutron.add_interface_router(
+                self.fake_raven._router['id'],
+                {'subnet_id': fake_cluster_subnet_id}).AndReturn(None)
+
+        # Mock the patch call
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        fake_patch_response_future = asyncio.Future(
+            loop=self.fake_raven._event_loop)
+        fake_patch_response_future.set_result(
+            _FakeSuccessResponse())
+
+        self.fake_raven.delegate(
+            requests.patch,
+            watchers.K8S_API_ENDPOINT_BASE + metadata['selfLink'],
+            data=mox.IgnoreArg(),
+            headers=mox.IgnoreArg()).AndReturn(fake_patch_response_future)
+
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_namespace_added_event))
+
+    def test_translate_added_networks_already_exist(self):
+
+        # Set the input fake data event
+        fake_namespace_added_event = {
+            "type": "ADDED",
+            "object": self.fake_namespace_object,
+        }
+        annotations = {
+            constants.K8S_ANNOTATION_SUBNET_KEY:
+                jsonutils.dumps('{foo: bar}')
+        }
+
+        metadata = fake_namespace_added_event['object']['metadata']
+        metadata['annotations'] = annotations
+        # Prepare the mock response of the neutron network that this
+        # pod belongs to
+        self.mox.StubOutWithMock(
+            self.fake_raven.neutron,
+            'list_networks')
+        fake_cluster_network_id = str(uuid.uuid4())
+        fake_cluster_network_response = {
+            'networks': [{
+                'name': metadata['name'],
+                'subnets': [],
+                'admin_state_up': False,
+                'shared': False,
+                'status': 'ACTIVE',
+                'tenant_id': str(uuid.uuid4()),
+                'id': fake_cluster_network_id}
+            ],
+        }
+        self.fake_raven.neutron.list_networks(
+            name=metadata['name']).AndReturn(
+                fake_cluster_network_response)
+
+        # Prepare the mock response of the neutron subnet that this
+        # pod belongs to
+        self.mox.StubOutWithMock(
+            self.fake_raven.neutron,
+            'list_subnets')
+        fake_cluster_subnet_id = str(uuid.uuid4())
+        fake_cluster_subnet_response = {
+            'subnets': [{
+                'id': fake_cluster_subnet_id,
+                'name': metadata['name'] + '-subnet',
+                'network_id': fake_cluster_network_id,
+                'enable_dhcp': False,
+                'cidr': '192.168.2.0/24'}
+            ],
+        }
+        self.fake_raven.neutron.list_subnets(
+            name=metadata['name'] + '-subnet').AndReturn(
+                fake_cluster_subnet_response)
+
+        # Fake router id
+        self.fake_raven._router['id'] = str(uuid.uuid4())
+
+        # Fake port attached to the router
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_ports')
+        port_id = str(uuid.uuid4())
+        tenant_id = str(uuid.uuid4())
+        fake_namespace_port = {
+            "network_id": fake_cluster_network_id,
+            "tenant_id": tenant_id,
+            "device_owner": "network:router_interface",
+            "mac_address": "fa:16:3e:20:57:c3",
+            "fixed_ips": [{
+                'subnet_id': fake_cluster_subnet_id,
+                'ip_address': '10.0.0.2',
+            }],
+            "id": port_id,
+            "device_id": self.fake_raven._router['id'],
+        }
+        self.fake_raven.neutron.list_ports(
+                device_owner='network:router_interface',
+                device_id=self.fake_raven._router['id'],
+                network_id=fake_cluster_network_id).AndReturn(
+                        {'ports': [fake_namespace_port]})
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+
+        # Mock the patch call
+        fake_patch_response_future = asyncio.Future(
+            loop=self.fake_raven._event_loop)
+        fake_patch_response_future.set_result(
+            _FakeSuccessResponse())
+
+        self.fake_raven.delegate(
+            requests.patch,
+            watchers.K8S_API_ENDPOINT_BASE + metadata['selfLink'],
+            data=mox.IgnoreArg(),
+            headers=mox.IgnoreArg()).AndReturn(fake_patch_response_future)
+
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_namespace_added_event))
+
+    def test_translate_added_delete_network(self):
+
+        # Set the input fake data event
+        fake_ns_del_event = {
+            "type": "DELETED",
+            "object": self.fake_namespace_object,
+        }
+
+        # Create the network and the subnet object and attach
+        # then into the event.
+        metadata = fake_ns_del_event['object']['metadata']
+        fake_cluster_network_id = str(uuid.uuid4())
+        namespace_network = {
+            'name': metadata['name'],
+            'subnets': [],
+            'admin_state_up': False,
+            'shared': False,
+            'status': 'ACTIVE',
+            'tenant_id': str(uuid.uuid4()),
+            'id': fake_cluster_network_id
+        }
+
+        fake_cluster_subnet_id = str(uuid.uuid4())
+        namespace_subnet = {
+            'id': fake_cluster_subnet_id,
+            'name': metadata['name'] + '-subnet',
+            'network_id': fake_cluster_network_id,
+            'ip_version': 4,
+            'subnetpool_id': self.fake_raven._subnetpool['id'],
+            'cidr': '192.168.2.0/24',
+            'enable_dhcp': True
+        }
+        annotations = {
+            constants.K8S_ANNOTATION_NETWORK_KEY:
+                jsonutils.dumps(namespace_network),
+            constants.K8S_ANNOTATION_SUBNET_KEY:
+                jsonutils.dumps(namespace_subnet)
+        }
+        metadata['annotations'] = annotations
+
+        # Delete network
+        self.fake_raven._router['id'] = str(uuid.uuid4())
+        self.mox.StubOutWithMock(self.fake_raven.neutron,
+                                 'remove_interface_router')
+        self.fake_raven.neutron.remove_interface_router(
+            self.fake_raven._router['id'],
+            {'subnet_id': fake_cluster_subnet_id}).AndReturn(None)
+        self.mox.StubOutWithMock(self.fake_raven.neutron,
+                                 'delete_network')
+        self.fake_raven.neutron.delete_network(
+            fake_cluster_network_id)
+
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_ns_del_event))
+
+
 class TestK8sPodsWatcher(TestK8sWatchersBase):
     """The unit test for the translate method of TestK8sPodsWatcher.
 
@@ -223,24 +494,67 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
 
     def test_translate_added(self):
         """Tests if K8sServicesWatcher.translate works as intended."""
+
+        # Set the input fake data event
         fake_pod_added_event = {
             "type": "ADDED",
             "object": self.fake_pod_object,
         }
-        fake_port_name = fake_pod_added_event['object']['metadata']['name']
-        fake_network_id = self.fake_raven._network['id']
         fake_port_id = str(uuid.uuid4())
         fake_port = self._get_fake_port(
-            fake_port_name, fake_network_id, fake_port_id)['port']
+            fake_pod_added_event['object']['metadata']['name'],
+            self.fake_raven._network['id'],
+            fake_port_id)['port']
         fake_port_future = asyncio.Future(loop=self.fake_raven._event_loop)
         fake_port_future.set_result({'port': fake_port})
         metadata = fake_pod_added_event['object']['metadata']
+
+        # Prepare the mock response of the neutron network that this
+        # pod belongs to
+        self.mox.StubOutWithMock(
+            self.fake_raven.neutron,
+            'list_networks')
+        fake_cluster_network_id = str(uuid.uuid4())
+        fake_cluster_network_response = {
+            'networks': [{
+                'name': metadata['namespace'],
+                'subnets': [],
+                'admin_state_up': False,
+                'shared': False,
+                'status': 'ACTIVE',
+                'tenant_id': str(uuid.uuid4()),
+                'id': fake_cluster_network_id}
+            ],
+        }
+        self.fake_raven.neutron.list_networks(
+            name=metadata['namespace']).AndReturn(
+                fake_cluster_network_response)
+
+        # Prepare the mock response of the neutron subnet that this
+        # pod belongs to
+        self.mox.StubOutWithMock(
+            self.fake_raven.neutron,
+            'list_subnets')
+        fake_cluster_subnet_id = str(uuid.uuid4())
+        fake_cluster_subnet_response = {
+            'subnets': [{
+                'id': fake_cluster_subnet_id,
+                'name': metadata['namespace'] + '-subnet',
+                'network_id': fake_cluster_network_id,
+                'enable_dhcp': False,
+                'cidr': '192.168.2.0/24'}
+            ],
+        }
+        self.fake_raven.neutron.list_subnets(
+            name=metadata['namespace'] + '-subnet').AndReturn(
+                fake_cluster_subnet_response)
+
         new_port = {
             'name': metadata.get('name', ''),
-            'network_id': self.fake_raven._network['id'],
+            'network_id': fake_cluster_network_id,
             'admin_state_up': True,
             'device_owner': constants.DEVICE_OWNER,
-            'fixed_ips': [{'subnet_id': self.fake_raven._subnet['id']}],
+            'fixed_ips': [{'subnet_id': fake_cluster_subnet_id}],
             'security_groups': [self.fake_raven._default_sg],
         }
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
@@ -253,10 +567,9 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
         metadata.update({'annotations': annotations})
         annotations.update(
             {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(fake_port)})
-        fake_subnet = self.fake_raven._subnet
         annotations.update(
-            {constants.K8S_ANNOTATION_SUBNETS_KEY: jsonutils.dumps(
-                [fake_subnet])})
+            {constants.K8S_ANNOTATION_SUBNET_KEY: jsonutils.dumps(
+                fake_cluster_subnet_response['subnets'][0])})
         fake_pod_update_data = {
             "kind": "Pod",
             "apiVersion": "v1",
@@ -288,11 +601,12 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             "type": "DELETED",
             "object": self.fake_pod_object,
         }
-        fake_port_name = fake_pod_deleted_event['object']['metadata']['name']
         fake_network_id = self.fake_raven._network['id']
         fake_port_id = str(uuid.uuid4())
         fake_port = self._get_fake_port(
-            fake_port_name, fake_network_id, fake_port_id)['port']
+            fake_pod_deleted_event['object']['metadata']['name'],
+            fake_network_id,
+            fake_port_id)['port']
         metadata = fake_pod_deleted_event['object']['metadata']
         annotations = metadata['annotations']
         annotations.update(

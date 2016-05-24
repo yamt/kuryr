@@ -32,7 +32,6 @@ from kuryr._i18n import _LE
 from kuryr import binding
 from kuryr.cni import constants as cni_consts
 from kuryr.cni import models
-from kuryr.common import config
 from kuryr.common import constants
 from kuryr.common import exceptions
 
@@ -120,16 +119,17 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
 
         endpoint_id = self.container_id
         pod_annotations = self._get_pod_annotaions()
+
         neutron_port = jsonutils.loads(
             pod_annotations[constants.K8S_ANNOTATION_PORT_KEY])
-        neutron_subnets = jsonutils.loads(
-            pod_annotations[constants.K8S_ANNOTATION_SUBNETS_KEY])
+        neutron_subnet = jsonutils.loads(
+            pod_annotations[constants.K8S_ANNOTATION_SUBNET_KEY])
 
         try:
             ifname, peer_name, (stdout, stderr) = binding.port_bind(
-                endpoint_id, neutron_port, neutron_subnets,
+                endpoint_id, neutron_port, neutron_subnet,
                 ifname=self.ifname, netns=self.netns,
-                default_gateway=config.CONF.k8s.cluster_gateway_ip)
+                default_gateway=neutron_subnet['gateway_ip'])
             LOG.debug(stdout)
             if stderr:
                 LOG.error(stderr)
@@ -143,13 +143,13 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
                     'Could not bind the Neutron port to the veth endpoint.'))
 
         info = models.CNIInfo()
-        cidr = netaddr.IPNetwork(neutron_subnets[0]['cidr'])
+        cidr = netaddr.IPNetwork(neutron_subnet['cidr'])
         ip_address = neutron_port.get('ip_address', '')
         fixed_ips = neutron_port.get('fixed_ips', [])
         if not ip_address and fixed_ips:
             ip_address = fixed_ips[0].get('ip_address', '')
         port_ip = '/'.join([ip_address, str(cidr.prefixlen)])
-        gateway_ip = neutron_subnets[0]['gateway_ip']
+        gateway_ip = neutron_subnet['gateway_ip']
         info.set_ipv4_info(ip=port_ip, gateway=gateway_ip)
         LOG.debug(str(info))
         return str(info)
