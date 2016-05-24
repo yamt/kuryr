@@ -105,6 +105,14 @@ raven_opts = [
                       'of ``concurrent.futures.ThreadPoolExecutor`` for more '
                       'details.'),
                default=multiprocessing.cpu_count() * 5),
+    cfg.IntOpt('max_retries', default=10,
+               help=_('The maximum number of the retries for translations. '
+                      'Translations can fail because they may depend on other'
+                      'translations or similar timing issues. This value sets '
+                      'how many times Raven retries.')),
+    cfg.IntOpt('max_wait_interval', default=30,
+               help=_('The maximum time in seconds for the wait interval of '
+                      'the translations')),
     cfg.StrOpt('lb_method', default='ROUND_ROBIN',
                choices=['ROUND_ROBIN', 'LEAST_CONNECTIONS', 'SOURCE_IP'],
                help=_('The Neutron Load Balancer algorithm type. One of '

@@ -24,9 +24,11 @@ import six
 
 from kuryr.common import config
 from kuryr.common import constants
+from kuryr.raven import aio
 from kuryr.raven import raven
 from kuryr.raven import watchers
 from kuryr.tests.unit import base
+from kuryr.tests.unit import test_raven
 from kuryr import utils
 
 
@@ -240,6 +242,39 @@ class TestK8sWatchersBase(base.TestKuryrBase):
         "status": {
             "loadBalancer": {},
         },
+    }
+
+    fake_endpoints_object = {
+        "kind": "Endpoints",
+        "apiVersion": "v1",
+        "metadata": {
+            "name": "frontend",
+            "namespace": "default",
+            "selfLink": "/api/v1/namespaces/default/endpoints/frontend",
+            "uid": "436bf3f9-1e53-11e6-8128-42010af00003",
+            "resourceVersion": "1034915",
+            "creationTimestamp": "2016-05-20T06:22:44Z",
+            "labels": {
+                "app": "guestbook",
+                "tier": "frontend"
+            }
+        },
+        "subsets": [{
+            "addresses": [{
+                "ip": "172.16.0.42",
+                "targetRef": {
+                    "kind": "Pod",
+                    "namespace": "default",
+                    "name": "frontend-g607i",
+                    "uid": "43748958-1e53-11e6-8128-42010af00003",
+                    "resourceVersion": "1034914"
+                }
+            }],
+            "ports": [{
+                "port": 80,
+                "protocol": "TCP"
+            }]
+        }]
     }
 
     @property
@@ -764,3 +799,85 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
             self.translate(fake_service_added_event))
+
+
+@ddt.ddt
+class TestK8sEndpointsWatcher(TestK8sWatchersBase):
+    """The unit test for the translate method of K8sEndpointsWatcher.
+
+    The following tests validate if translate method works appropriately.
+    """
+    TEST_WATCHER = watchers.K8sEndpointsWatcher
+
+    def _test_translate(self, fake_endpoints_event):
+        fake_service_object = copy.deepcopy(self.fake_service_object)
+        pool_id = str(uuid.uuid4())
+        fake_pool = {
+            'name': fake_service_object['metadata']['name'],
+            'subnet_id': self.fake_raven._subnet['id'],
+            'lb_method': config.CONF.raven.lb_method,
+            'id': pool_id,
+        }
+        fake_service_object['metadata'].update(
+            {'annotations':
+             {constants.K8S_ANNOTATION_POOL_KEY: jsonutils.dumps(fake_pool)}})
+
+        fake_service_future = asyncio.Future(loop=self.fake_raven._event_loop)
+        fake_service_response = test_raven._FakeResponse(
+            utils.utf8_json_encoder(fake_service_object),
+            loop=self.fake_raven._event_loop)
+        fake_service_future.set_result(fake_service_response)
+        fake_namespace = fake_service_object['metadata']['namespace']
+        fake_service_name = fake_service_object['metadata']['name']
+        endpoint = utils.get_service_endpoint(
+            fake_namespace, fake_service_name)
+
+        self.mox.StubOutWithMock(aio.methods, 'get')
+        aio.methods.get(endpoint=endpoint,
+                        loop=self.fake_raven._event_loop).AndReturn(
+            fake_service_future)
+
+        member_id = str(uuid.uuid4())
+        subsets = self.fake_endpoints_object['subsets']
+        fake_ip_address = subsets[0]['addresses'][0]['ip']
+        fake_protocol_port = subsets[0]['ports'][0]['port']
+        fake_member = {
+            'id': member_id,
+            'pool_id': pool_id,
+            'address': fake_ip_address,
+            'protocol_port': fake_protocol_port,
+            'weight': 1,
+        }
+        fake_member_response = {'member': copy.deepcopy(fake_member)}
+        # The request doesn't have the "id" attribute.
+        del fake_member['id']
+        fake_member_future = asyncio.Future(loop=self.fake_raven._event_loop)
+        fake_member_future.set_result(fake_member_response)
+
+        self.mox.StubOutWithMock(self.fake_raven, 'sequential_delegate')
+        if fake_endpoints_event['type'] == watchers.MODIFIED_EVENT:
+            fake_empty_members_future = asyncio.Future(
+                loop=self.fake_raven._event_loop)
+            fake_empty_members_future.set_result({'members': []})
+            self.fake_raven.sequential_delegate(
+                mox.IsA(self.fake_raven.neutron.list_members),
+                pool_id=fake_member['pool_id'], address=fake_member['address'],
+                protocol_port=fake_member['protocol_port']).AndReturn(
+                fake_empty_members_future)
+        self.fake_raven.sequential_delegate(
+            mox.IsA(self.fake_raven.neutron.create_member),
+            {'member': fake_member}).AndReturn(
+            fake_member_future)
+
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate(fake_endpoints_event))
+
+    @ddt.data(watchers.ADDED_EVENT, watchers.MODIFIED_EVENT)
+    def test_translate(self, event_type):
+        """Tests if the translate method works as intended for events."""
+        fake_endpoints_event = {
+            "type": event_type,
+            "object": self.fake_endpoints_object,
+        }
+        self._test_translate(fake_endpoints_event)

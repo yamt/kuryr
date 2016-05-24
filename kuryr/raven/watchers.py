@@ -13,17 +13,21 @@
 
 import abc
 import asyncio
+import random
 
 from neutronclient.common import exceptions as n_exceptions
 from oslo_log import log
 from oslo_serialization import jsonutils
+from oslo_utils import excutils
 import requests
 import six
 
 from kuryr._i18n import _LE
+from kuryr._i18n import _LI
 from kuryr._i18n import _LW
 from kuryr.common import config
 from kuryr.common import constants
+from kuryr.raven import aio
 from kuryr import utils
 
 
@@ -647,3 +651,201 @@ class K8sServicesWatcher(K8sAPIWatcher):
             if path:
                 yield from _update_annotation(self.delegate, path, 'Service',
                                               annotations)
+
+
+class K8sEndpointsWatcher(K8sAPIWatcher):
+    """An endpoints watcher.
+
+    ``K8sEndpointsWatcher`` makes a GET request against
+    ``/api/v1/endpoints?watch=true`` and receives the event notifications. Then
+    it translates them into requrests against the Neutron API.
+
+    An example of a JSON response follows. It is pretty-printed but the
+    actual response is provided as a single line of JSON.
+    ::
+
+      {
+        "type": "ADDED",
+        "object": {
+          "kind": "Endpoints",
+          "apiVersion": "v1",
+          "metadata": {
+            "name": "frontend",
+            "namespace": "default",
+            "selfLink": "/api/v1/namespaces/default/endpoints/frontend",
+            "uid": "436bf3f9-1e53-11e6-8128-42010af00003",
+            "resourceVersion": "1034915",
+            "creationTimestamp": "2016-05-20T06:22:44Z",
+            "labels": {
+              "app": "guestbook",
+              "tier": "frontend"
+            }
+          },
+          "subsets": [
+            {
+              "addresses": [
+                {
+                  "ip": "172.16.0.77",
+                  "targetRef": {
+                    "kind": "Pod",
+                    "namespace": "default",
+                    "name": "frontend-g607i",
+                    "uid": "43748958-1e53-11e6-8128-42010af00003",
+                    "resourceVersion": "1034914"
+                  }
+                },
+                {
+                  "ip": "172.16.0.78",
+                  "targetRef": {
+                    "kind": "Pod",
+                    "namespace": "default",
+                    "name": "frontend-hl8ic",
+                    "uid": "4374c8f0-1e53-11e6-8128-42010af00003",
+                    "resourceVersion": "1034899"
+                  }
+                },
+                {
+                  "ip": "172.16.0.79",
+                  "targetRef": {
+                    "kind": "Pod",
+                    "namespace": "default",
+                    "name": "frontend-blc48",
+                    "uid": "4374dd81-1e53-11e6-8128-42010af00003",
+                    "resourceVersion": "1034912"
+                  }
+                }
+              ],
+              "ports": [
+                {
+                  "port": 80,
+                  "protocol": "TCP"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    """
+    SERVICES_ENDPOINT = constants.K8S_API_ENDPOINT_V1 + '/endpoints'
+    WATCH_ENDPOINT = SERVICES_ENDPOINT + '?watch=true'
+
+    @asyncio.coroutine
+    def translate(self, decoded_json):
+        """Translates a K8s endpoints into a Neutorn Pool Member.
+
+        The endpoints translation can be assumed to be done after the service
+        translation, which creates the Neutron Pool and the VIP.
+
+        :param decoded_json: An endpoint event to be translated.
+        """
+        @asyncio.coroutine
+        def create_pool_members(pool_id, subsets, reuse=False):
+            """Creates pool members from the given subsets of the endpoints.
+
+            :param pool_id: The ID of the pool with which the pool members are
+                            associated.
+            :param subsets: The dictionary represents the subsets property.
+            :param reuse: Whether to check for the existence of the pool
+                          members. Defaults to False, which is what you want
+                          for new pools that have had no members created yet.
+            """
+            for subset in subsets:
+                ports = subset['ports']
+                addresses = subset['addresses']
+                # Create members for each combination of the address and the
+                # port.
+                for port in ports:
+                    protocol_port = port['port']
+                    for address in addresses:
+                        ip_address = address['ip']
+                        if reuse:
+                            members_response = yield from \
+                                self.sequential_delegate(
+                                    self.neutron.list_members, pool_id=pool_id,
+                                    address=ip_address,
+                                    protocol_port=protocol_port)
+                            members = members_response['members']
+                            if members:
+                                continue
+
+                        member_request = {
+                            'member': {
+                                'pool_id': pool_id,
+                                'address': ip_address,
+                                'protocol_port': protocol_port,
+                                'weight': 1,
+                            },
+                        }
+                        try:
+                            # Make sure the requests against Neutron API are
+                            # scheduled sequentially.
+                            member_response = yield from \
+                                self.sequential_delegate(
+                                    self.neutron.create_member, member_request)
+                            member = member_response['member']
+                            LOG.debug('Successfully created a new member '
+                                      '%(member)s for the pool %(pool_id)s',
+                                      {'member': member, 'pool_id': pool_id})
+                        except n_exceptions.NeutronClientException as ex:
+                            with excutils.save_and_reraise_exception():
+                                LOG.error(_LE('Error happend during creating '
+                                              'a Neutron loadbalancer pool '
+                                              'member: %s'), ex)
+
+        LOG.debug('Endpoints notification %s', decoded_json)
+        event_type = decoded_json.get('type', '')
+        content = decoded_json.get('object', {})
+        metadata = content.get('metadata', {})
+        subsets = content.get('subsets', [])
+
+        namespace = metadata.get('namespace',
+                                 constants.K8S_DEFAULT_NAMESPACE)
+        service_name = metadata['name']
+        # FIXME(tfukushima): Ignore kubernetes service for now.
+        if service_name == 'kubernetes':
+            LOG.info(_LI('Ignoring "kubernetes" service since it is not '
+                         'supported yet'))
+            return
+        service_endpoint = utils.get_service_endpoint(namespace, service_name)
+
+        # Poll until K8sServicesWatcher finishes the translation of the
+        # corresponding service.
+        retries = 0
+        while retries < constants.MAX_RETRIES:
+            service_response = yield from aio.methods.get(
+                endpoint=service_endpoint, loop=self._event_loop)
+            status, _, _ = yield from service_response.read_headers()
+            assert status == 200
+            service_response_body = yield from service_response.read()
+            service = utils.utf8_json_decoder(service_response_body)
+            service_metadata = service.get('metadata', {})
+            service_annotations = service_metadata.get('annotations', {})
+            serialized_pool = service_annotations.get(
+                constants.K8S_ANNOTATION_POOL_KEY, '{}')
+            pool = jsonutils.loads(serialized_pool)
+            if pool:
+                break
+            else:
+                retries += 1
+                backoff_unit = constants.BACKOFF_UNIT
+                backoff_time = backoff_unit * random.randint(
+                    0, (2 ** retries) - 1)
+                wait_time = min(backoff_time, constants.MAX_WAIT_INTERVAL)
+                LOG.debug('The service is not translated yet. Retried {0} '
+                          'times and the next interval is {1:.2f} seconds.'
+                          .format(retries, wait_time))
+                yield from self.wait_for(wait_time)
+
+        if retries >= constants.MAX_RETRIES:
+            LOG.error(_LE('Failed to fetch the pool information in the '
+                          'service %s. The service translation might have '
+                          'been failed.'), service_name)
+            return
+        pool_id = pool['id']
+        # The pool member deletion is done by K8sServicesWatcher by deleting
+        # the associated pool that deletes its members in the cascaded way.
+        if event_type == ADDED_EVENT:
+            yield from create_pool_members(pool_id, subsets)
+        elif event_type == MODIFIED_EVENT:
+            # The pool members in subnets could be created already.
+            yield from create_pool_members(pool_id, subsets, reuse=True)

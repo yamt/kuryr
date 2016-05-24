@@ -45,3 +45,7 @@ K8S_DEFAULT_NAMESPACE = 'default'
 # REVISIT(yamamoto): Which of label or annotation is more suitable for
 # this purpose?  Do we want to allow users to specify multiple SGs?
 K8S_LABEL_SECURITY_GROUP_KEY = 'kuryr.org/neutron-security-group'
+
+MAX_RETRIES = config.CONF.raven.max_retries
+MAX_WAIT_INTERVAL = config.CONF.raven.max_wait_interval
+BACKOFF_UNIT = 0.2
