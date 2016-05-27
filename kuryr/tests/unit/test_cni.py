@@ -11,7 +11,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import ddt
-import netaddr
+import ipaddress
 
 from oslo_serialization import jsonutils
 
@@ -107,16 +107,16 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
         tenant_id = '39dd23d1-7d7c-4586-a105-bc6f84f9a769'
         port_id = '7a12ebf0-ed19-4819-94cd-150acf9f5c1f'
 
-        net = netaddr.IPNetwork(config.CONF.k8s.cluster_subnet)
-        port_ip = str(netaddr.IPAddress(net.first + 11))
-        gateway_ip = config.CONF.k8s.cluster_gateway_ip
+        net = ipaddress.ip_network(config.CONF.k8s.cluster_vip_subnet)
+        gateway_ip = str(next(net.hosts()))
+        first_ip = str(next(net.hosts()))
 
         port = {
             'admin_state_up': True,
             'device_id': '34640abf-cf2a-48eb-afb8-c30f99a97056',
             'device_owner': constants.DEVICE_OWNER,
             'fixed_ips': [{
-                'ip_address': port_ip,
+                'ip_address': first_ip,
                 'subnet_id': subnet_id}],
             'id': port_id,
             'mac_address': '00:11:22:33:44:55',
@@ -130,8 +130,8 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
             'network_id': net_id,
             'tenant_id': tenant_id,
             'allocation_pools': [{
-                'start': str(netaddr.IPAddress(net.first + 2)),
-                'end': str(netaddr.IPAddress(net.last - 1))}],
+                'start': first_ip,
+                'end': str(next(net.hosts()))}],
             'gateway_ip': gateway_ip,
             'ip_version': 4,
             'cidr': str(net),
@@ -171,7 +171,7 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
             jsonutils.dumps({
                 'cniVersion': '0.1.0',
                 'ip4': {
-                    'ip': '{0}/{1}'.format(port_ip, net.prefixlen),
+                    'ip': '{0}/{1}'.format(first_ip, net.prefixlen),
                     'gateway': gateway_ip
                 },
                 'dns': {}}),
