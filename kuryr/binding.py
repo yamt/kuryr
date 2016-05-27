@@ -175,7 +175,8 @@ def port_bind(endpoint_id, neutron_port, neutron_subnets,
                 ipdb_ns = pyroute2.IPDB(nl=pyroute2.NetNS(pid))
                 try:
                     with ipdb_ns.by_name[peer_name] as peer_veth:
-                        _make_up_veth(peer_veth, neutron_port, neutron_subnets)
+                        _make_up_veth(peer_veth, neutron_port, neutron_subnets,
+                                      container_ifname=container_ifname)
                     if default_gateway:
                         _setup_default_gateway(
                             ipdb_ns, peer_veth, default_gateway)
