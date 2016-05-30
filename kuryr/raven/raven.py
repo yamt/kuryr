@@ -96,6 +96,7 @@ class Raven(service.Service):
         super(Raven, self).__init__()
         self._executor = futures.ThreadPoolExecutor(
             max_workers=config.CONF.raven.max_workers)
+        self._sequential_executor = futures.ThreadPoolExecutor(max_workers=1)
         self._event_loop = asyncio.new_event_loop()
         self._event_loop.set_default_executor(
             self._executor)
@@ -297,6 +298,7 @@ class Raven(service.Service):
         if self._event_loop.is_running():
             self._event_loop.stop()
         self._executor.shutdown(wait=True)
+        self._sequential_executor.shutdown(wait=True)
         self._event_loop.close()
 
         super(Raven, self).stop(graceful)
@@ -307,26 +309,53 @@ class Raven(service.Service):
         super(Raven, self).wait()
 
     @asyncio.coroutine
-    def delegate(self, func, *args, **kwargs):
-        """Delegates the execution of the passed function to this instance.
-
-        The passed function or the method is executed immediately in the
-        different thread. This provides the generic abstraction for making the
-        synchrounized processe asynchronous.
-
-        :param func:   The function or the method to be executed.
-        :param args:   The arguments for the function, which can be the mixutre
-                       of the regular arguments and the arbitrary arguments
-                       passed to the function.
-        :param kwargs: The keyword arguments passed to the function.
-        :returns: The result of the passed function with the arguments.
-        """
+    def _delegate(self, executor, func, *args, **kwargs):
         # run_in_executor of the event loop can't take the keyword args. So
         # all arguments are bound with functools.partial and create a new
         # function that takes no argument here.
-        partiall_applied_func = functools.partial(func, *args, **kwargs)
+        partially_applied_func = functools.partial(func, *args, **kwargs)
         result = yield from self._event_loop.run_in_executor(
-            self._executor, partiall_applied_func)
+            executor, partially_applied_func)
+        return result
+
+    @asyncio.coroutine
+    def delegate(self, func, *args, **kwargs):
+        """Delegates the execution of the passed function to this instance.
+
+        The passed function or method is executed immediately in a different
+        thread. This provides a generic abstraction for making the synchronized
+        processes asynchronous.
+
+        :param func:   The function or the method to be executed.
+        :param args:   The arguments for the function, which can be the mixture
+                       of regular and arbitrary arguments passed to the
+                       function.
+        :param kwargs: The keyword arguments passed to the function.
+        :returns: The result of the execution of the passed function with the
+                  arguments.
+        """
+        result = yield from self._delegate(
+            self._executor, func, *args, **kwargs)
+        return result
+
+    @asyncio.coroutine
+    def sequential_delegate(self, func, *args, **kwargs):
+        """Delegates the sequential execution of the passed function.
+
+        The passed function or the method is executed immediately in a
+        different thread, but in a sequential way. This provides a generic
+        abstraction for making the synchronized processes asynchronous.
+
+        :param func:   The function or the method to be executed.
+        :param args:   The arguments for the function, which can be the mixture
+                       of regular and arbitrary arguments passed to the
+                       function.
+        :param kwargs: The keyword arguments passed to the function.
+        :returns: The result of the execution of the passed function with the
+                  arguments.
+        """
+        result = yield from self._delegate(
+            self._sequential_executor, func, *args, **kwargs)
         return result
 
     @asyncio.coroutine
