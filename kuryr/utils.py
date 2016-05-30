@@ -194,3 +194,15 @@ def get_subnet_name(namespace):
     :returns: The subnet name corresponding to the given namespace name.
     """
     return '-'.join([namespace, 'subnet'])
+
+
+def get_service_endpoint(namespace, service_name):
+    """Composes the endpoint for services and returns it.
+
+    :param namespace:    The namespace where the services belong to.
+    :param service_name: The name of the service to be retrieved.
+    :returns: The composed endpoint for the services in string.
+    """
+    service_endpoint = '/'.join([const.K8S_API_ENDPOINT_V1, 'namespaces',
+                                 namespace, 'services', service_name])
+    return service_endpoint
