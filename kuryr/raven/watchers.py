@@ -22,13 +22,9 @@ import six
 
 from kuryr._i18n import _LE
 from kuryr._i18n import _LW
-from kuryr.common import config
 from kuryr.common import constants
 from kuryr import utils
 
-
-K8S_API_ENDPOINT_BASE = config.CONF.k8s.api_root
-K8S_API_ENDPOINT_V1 = K8S_API_ENDPOINT_BASE + '/api/v1'
 
 ADDED_EVENT = 'ADDED'
 DELETED_EVENT = 'DELETED'
@@ -174,7 +170,7 @@ class K8sPodsWatcher(K8sAPIWatcher):
         }
       }
     """
-    PODS_ENDPOINT = K8S_API_ENDPOINT_V1 + '/pods'
+    PODS_ENDPOINT = constants.K8S_API_ENDPOINT_V1 + '/pods'
     WATCH_ENDPOINT = PODS_ENDPOINT + '?watch=true'
 
     @asyncio.coroutine
@@ -257,7 +253,7 @@ class K8sPodsWatcher(K8sAPIWatcher):
                     'Accept': 'application/json',
                 }
                 response = yield from self.delegate(
-                    requests.patch, K8S_API_ENDPOINT_BASE + path,
+                    requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
                     data=jsonutils.dumps(data), headers=headers)
                 assert response.status_code == requests.codes.ok
                 LOG.debug("Successfully updated the annotations.")
@@ -336,7 +332,7 @@ class K8sNamespaceWatcher(K8sAPIWatcher):
         }
       }
     """
-    NAMESPACES_ENDPOINT = K8S_API_ENDPOINT_V1 + '/namespaces'
+    NAMESPACES_ENDPOINT = constants.K8S_API_ENDPOINT_V1 + '/namespaces'
     WATCH_ENDPOINT = NAMESPACES_ENDPOINT + '?watch=true'
 
     @asyncio.coroutine
@@ -425,7 +421,7 @@ class K8sNamespaceWatcher(K8sAPIWatcher):
                 'Accept': 'application/json',
             }
             response = yield from self.delegate(
-                requests.patch, K8S_API_ENDPOINT_BASE + path,
+                requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
                 data=jsonutils.dumps(content), headers=headers)
             assert response.status_code == requests.codes.ok
             LOG.debug("Successfully updated the annotations.")
@@ -506,7 +502,7 @@ class K8sServicesWatcher(K8sAPIWatcher):
         }
       }
     """
-    SERVICES_ENDPOINT = K8S_API_ENDPOINT_V1 + '/services'
+    SERVICES_ENDPOINT = constants.K8S_API_ENDPOINT_V1 + '/services'
     WATCH_ENDPOINT = SERVICES_ENDPOINT + '?watch=true'
 
     def translate(self, decoded_json):

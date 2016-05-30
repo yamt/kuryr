@@ -328,7 +328,7 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
 
         self.fake_raven.delegate(
             requests.patch,
-            watchers.K8S_API_ENDPOINT_BASE + metadata['selfLink'],
+            constants.K8S_API_ENDPOINT_BASE + metadata['selfLink'],
             data=mox.IgnoreArg(),
             headers=mox.IgnoreArg()).AndReturn(fake_patch_response_future)
 
@@ -426,7 +426,7 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
 
         self.fake_raven.delegate(
             requests.patch,
-            watchers.K8S_API_ENDPOINT_BASE + metadata['selfLink'],
+            constants.K8S_API_ENDPOINT_BASE + metadata['selfLink'],
             data=mox.IgnoreArg(),
             headers=mox.IgnoreArg()).AndReturn(fake_patch_response_future)
 
@@ -597,7 +597,7 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             loop=self.fake_raven._event_loop)
         fake_patch_response_future.set_result(fake_patch_response)
         self.fake_raven.delegate(
-            requests.patch, watchers.K8S_API_ENDPOINT_BASE + path,
+            requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
             data=jsonutils.dumps(fake_pod_update_data),
             headers=headers).AndReturn(fake_patch_response_future)
         self.mox.ReplayAll()

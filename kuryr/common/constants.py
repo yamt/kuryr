@@ -10,6 +10,8 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from kuryr.common import config
+
 
 SCHEMA = {
     "PLUGIN_ACTIVATE": {"Implements": ["NetworkDriver", "IpamDriver"]},
@@ -32,6 +34,9 @@ KURYR_EXISTING_NEUTRON_NET = 'kuryr.net.existing'
 K8S_ANNOTATION_PORT_KEY = 'kuryr.org/neutron-port'
 K8S_ANNOTATION_SUBNET_KEY = 'kuryr.org/neutron-subnet'
 K8S_ANNOTATION_NETWORK_KEY = 'kuryr.org/neutron-network'
+
+K8S_API_ENDPOINT_BASE = config.CONF.k8s.api_root
+K8S_API_ENDPOINT_V1 = K8S_API_ENDPOINT_BASE + '/api/v1'
 
 # REVISIT(yamamoto): Which of label or annotation is more suitable for
 # this purpose?  Do we want to allow users to specify multiple SGs?
