@@ -27,6 +27,7 @@ from kuryr.common import constants
 from kuryr.raven import raven
 from kuryr.raven import watchers
 from kuryr.tests.unit import base
+from kuryr import utils
 
 
 class TestK8sAPIWatchers(base.TestKuryrBase):
@@ -262,9 +263,10 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
                 'name': metadata['name']
             }
         }
+        namespace = metadata['name']
         fake_cluster_network_res = {
             'network': {
-                'name': metadata['name'],
+                'name': namespace,
                 'subnets': [],
                 'admin_state_up': False,
                 'shared': False,
@@ -280,12 +282,14 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
         # Return no subnets and create a new one
         self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
         self.mox.StubOutWithMock(self.fake_raven.neutron, 'create_subnet')
+
+        fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         self.fake_raven.neutron.list_subnets(
-                name=metadata['name'] + '-subnet').AndReturn({'subnets': []})
+                name=fake_cluster_subnet_name).AndReturn({'subnets': []})
         fake_cluster_subnet_id = str(uuid.uuid4())
         fake_cluster_subnet_req = {
             'subnet': {
-                'name': metadata['name'] + '-subnet',
+                'name': fake_cluster_subnet_name,
                 'network_id': fake_cluster_network_id,
                 'ip_version': 4,
                 'subnetpool_id': self.fake_raven._subnetpool['id']
@@ -352,9 +356,10 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
             self.fake_raven.neutron,
             'list_networks')
         fake_cluster_network_id = str(uuid.uuid4())
+        namespace = metadata['name']
         fake_cluster_network_response = {
             'networks': [{
-                'name': metadata['name'],
+                'name': namespace,
                 'subnets': [],
                 'admin_state_up': False,
                 'shared': False,
@@ -364,7 +369,7 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
             ],
         }
         self.fake_raven.neutron.list_networks(
-            name=metadata['name']).AndReturn(
+            name=namespace).AndReturn(
                 fake_cluster_network_response)
 
         # Prepare the mock response of the neutron subnet that this
@@ -373,17 +378,18 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
             self.fake_raven.neutron,
             'list_subnets')
         fake_cluster_subnet_id = str(uuid.uuid4())
+        fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         fake_cluster_subnet_response = {
             'subnets': [{
                 'id': fake_cluster_subnet_id,
-                'name': metadata['name'] + '-subnet',
+                'name': fake_cluster_subnet_name,
                 'network_id': fake_cluster_network_id,
                 'enable_dhcp': False,
                 'cidr': '192.168.2.0/24'}
             ],
         }
         self.fake_raven.neutron.list_subnets(
-            name=metadata['name'] + '-subnet').AndReturn(
+            name=fake_cluster_subnet_name).AndReturn(
                 fake_cluster_subnet_response)
 
         # Fake router id
@@ -440,8 +446,9 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
         # then into the event.
         metadata = fake_ns_del_event['object']['metadata']
         fake_cluster_network_id = str(uuid.uuid4())
+        namespace = metadata['name']
         namespace_network = {
-            'name': metadata['name'],
+            'name': namespace,
             'subnets': [],
             'admin_state_up': False,
             'shared': False,
@@ -451,9 +458,10 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
         }
 
         fake_cluster_subnet_id = str(uuid.uuid4())
+        fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         namespace_subnet = {
             'id': fake_cluster_subnet_id,
-            'name': metadata['name'] + '-subnet',
+            'name': fake_cluster_subnet_name,
             'network_id': fake_cluster_network_id,
             'ip_version': 4,
             'subnetpool_id': self.fake_raven._subnetpool['id'],
@@ -515,9 +523,10 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             self.fake_raven.neutron,
             'list_networks')
         fake_cluster_network_id = str(uuid.uuid4())
+        namespace = metadata['namespace']
         fake_cluster_network_response = {
             'networks': [{
-                'name': metadata['namespace'],
+                'name': namespace,
                 'subnets': [],
                 'admin_state_up': False,
                 'shared': False,
@@ -536,17 +545,20 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             self.fake_raven.neutron,
             'list_subnets')
         fake_cluster_subnet_id = str(uuid.uuid4())
+        fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         fake_cluster_subnet_response = {
             'subnets': [{
                 'id': fake_cluster_subnet_id,
-                'name': metadata['namespace'] + '-subnet',
+                'name': fake_cluster_subnet_name,
                 'network_id': fake_cluster_network_id,
                 'enable_dhcp': False,
                 'cidr': '192.168.2.0/24'}
             ],
         }
+        namespace = metadata['namespace']
+        fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         self.fake_raven.neutron.list_subnets(
-            name=metadata['namespace'] + '-subnet').AndReturn(
+            name=fake_cluster_subnet_name).AndReturn(
                 fake_cluster_subnet_response)
 
         new_port = {

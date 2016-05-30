@@ -184,3 +184,13 @@ def utf8_json_encoder(deserialized):
     :returns: The bytes converted from the deserialized JSON.
     """
     return bytearray(jsonutils.dumps(deserialized), 'utf-8')
+
+
+def get_subnet_name(namespace):
+    """Gets the subnet name corresponding to the provided namespace.
+
+    :param namespace: The namespace name for which we want to obtain the
+                      subnet name.
+    :returns: The subnet name corresponding to the given namespace name.
+    """
+    return '-'.join([namespace, 'subnet'])

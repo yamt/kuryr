@@ -24,6 +24,7 @@ from kuryr._i18n import _LE
 from kuryr._i18n import _LW
 from kuryr.common import config
 from kuryr.common import constants
+from kuryr import utils
 
 
 K8S_API_ENDPOINT_BASE = config.CONF.k8s.api_root
@@ -200,7 +201,7 @@ class K8sPodsWatcher(K8sAPIWatcher):
 
             namespace_network = namespace_networks[0]
 
-            namespace_subnet_name = namespace + '-subnet'
+            namespace_subnet_name = utils.get_subnet_name(namespace)
             namespace_subnets = self.neutron.list_subnets(
                 name=namespace_subnet_name)['subnets']
             if not namespace_subnets:
