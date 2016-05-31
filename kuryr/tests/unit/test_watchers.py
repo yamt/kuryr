@@ -284,6 +284,16 @@ class TestK8sWatchersBase(base.TestKuryrBase):
             self.fake_raven, FakeRaven)
         self.addCleanup(self.fake_raven.stop)
 
+    def make_future(self, value):
+        """Makes an instance of Future and sets the given value to it.
+
+        :param value: The value of the instanceof Future.
+        :returns: The Future instance the result of which is the given value.
+        """
+        future = asyncio.Future(loop=self.fake_raven._event_loop)
+        future.set_result(value)
+        return future
+
 
 class TestK8sNamespaceWatcher(TestK8sWatchersBase):
     """The unit test for the translate method of K8sNamespaceWatcher. """
@@ -369,10 +379,7 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
 
         # Mock the patch call
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
-        fake_patch_response_future = asyncio.Future(
-            loop=self.fake_raven._event_loop)
-        fake_patch_response_future.set_result(
-            _FakeSuccessResponse())
+        fake_patch_response_future = self.make_future(_FakeSuccessResponse())
 
         self.fake_raven.delegate(
             requests.patch,
@@ -465,10 +472,7 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
 
         # Mock the patch call
-        fake_patch_response_future = asyncio.Future(
-            loop=self.fake_raven._event_loop)
-        fake_patch_response_future.set_result(
-            _FakeSuccessResponse())
+        fake_patch_response_future = self.make_future(_FakeSuccessResponse())
 
         self.fake_raven.delegate(
             requests.patch,
@@ -562,8 +566,7 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             fake_port_name, fake_network_id, fake_port_id,
             neutron_subnet_v4_id=self.fake_raven._subnet['id'],
             neutron_subnet_v4_address=fake_port_ip_address)['port']
-        fake_port_future = asyncio.Future(loop=self.fake_raven._event_loop)
-        fake_port_future.set_result({'port': fake_port})
+        fake_port_future = self.make_future({'port': fake_port})
         metadata = fake_pod_added_event['object']['metadata']
 
         # Prepare the mock response of the neutron network that this
@@ -634,9 +637,7 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             "metadata": metadata,
         }
         fake_patch_response = _FakeSuccessResponse()
-        fake_patch_response_future = asyncio.Future(
-            loop=self.fake_raven._event_loop)
-        fake_patch_response_future.set_result(fake_patch_response)
+        fake_patch_response_future = self.make_future(fake_patch_response)
         self.fake_raven.delegate(
             requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
             data=jsonutils.dumps(fake_pod_update_data),
