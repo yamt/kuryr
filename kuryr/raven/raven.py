@@ -438,8 +438,7 @@ class Raven(service.Service):
                 if asyncio.iscoroutinefunction(callback):
                     task = callback(content)
                 else:
-                    task = self._event_loop.run_in_executor(
-                        None, callback, content)
+                    task = self.delegate(callback, content)
 
                 try:
                     yield from task
