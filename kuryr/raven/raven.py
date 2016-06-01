@@ -250,11 +250,25 @@ class Raven(service.Service):
             self.stop()
 
     def restart(self):
+        """Restarts Raven instance."""
         LOG.debug('Restarted the service: {0}'.format(self.__class__.__name__))
         super(Raven, self).restart()
 
     def start(self):
-        """Starts the event loop and watch endpoints."""
+        """Starts the event loop and watch endpoints.
+
+        Before starting the event loop and the watch, Raven creates the Neutron
+        network and subnet for the services with the router to be shared among
+        the namespaces.
+
+        Then Raven creates tasks consumed in the event loop with the registered
+        callbacks for each endpoint and their cancellation callbacks. The
+        signal handlers are specified for the manual termination by users as
+        well.
+
+        Finally, Raven starts running the event loop until all tasks are
+        completed.
+        """
         LOG.debug('Started the service: {0}'.format(self.__class__.__name__))
         super(Raven, self).start()
         LOG.debug('Watched endpoints: {0}'
@@ -305,6 +319,7 @@ class Raven(service.Service):
         LOG.debug('Stopped the service: {0}'.format(self.__class__.__name__))
 
     def wait(self):
+        """Waits for Raven to complete."""
         LOG.debug('Wait for the service: {0}'.format(self.__class__.__name__))
         super(Raven, self).wait()
 
@@ -360,6 +375,17 @@ class Raven(service.Service):
 
     @asyncio.coroutine
     def watch(self, endpoint, callback):
+        """Watches the endpoint and calls the callback with its response.
+
+        In this method the endpoint is assumed it keeps returning a JSON object
+        line by line as its response. Otherwise the first line is consumed and
+        the watch is finished after that.
+
+        :param endpoint: The string of the API endpoint to be watched.
+        :param callback: The function that is called with the decoded JSON
+                         response returned by the HTTP call agaisnt the
+                         endpoint.
+        """
         response = yield from methods.get(endpoint=endpoint,
                                           loop=self._event_loop,
                                           decoder=utils.utf8_json_decoder)
