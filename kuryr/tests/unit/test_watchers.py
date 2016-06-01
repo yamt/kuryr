@@ -242,6 +242,20 @@ class TestK8sWatchersBase(base.TestKuryrBase):
         },
     }
 
+    @property
+    def none_future(self):
+        """Returns an instance of asyncio.Future which result is None.
+
+        :returns: The instance of asyncio.Future which result is set to None.
+                  The instance is cached once it's creatd as it corresponds to
+                  None.
+        """
+        if not hasattr(self, '_none_future'):
+            self._none_future = asyncio.Future(
+                loop=self.fake_raven._event_loop)
+            self._none_future.set_result(None)
+        return self._none_future
+
     @abc.abstractproperty
     def TEST_WATCHER(self):
         """The watcher class to be tested.
@@ -653,11 +667,9 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
         annotations.update(
             {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(fake_port)})
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
-        none_future = asyncio.Future(loop=self.fake_raven._event_loop)
-        none_future.set_result(None)
         self.fake_raven.delegate(
             mox.IsA(self.fake_raven.neutron.delete_port),
-            fake_port_id).AndReturn(none_future)
+            fake_port_id).AndReturn(self.none_future)
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
             self.translate(fake_pod_deleted_event))
