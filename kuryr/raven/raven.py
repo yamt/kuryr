@@ -44,11 +44,11 @@ DEFAULT_PREFIX_LEN = 24
 
 
 def register_watchers(*watchers):
-    """Registers one or more watchers to ``WATCH_ENDPONT_AND_CALL_BACKS``.
+    """Registers one or more watchers to ``WATCH_ENDPOINT_AND_CALLBACKS``.
 
     This functions is intended to be used as a decorator for a class. The
     watchers **must** conform to the requirements of ``K8sApiWatcher`` abstract
-    class, that is to implement ``WATCH_ENDPONT`` property and ``translate``
+    class, that is to implement ``WATCH_ENDPOINT`` property and ``translate``
     method.
 
     >>> from kuryr.raven import watchers
