@@ -191,7 +191,7 @@ class Raven(service.Service):
             name=subnet_name,
             network_id=self._cluster_network['id'])
         if subnets:
-            self._cluster_subnet = subnets[0]['subnet']
+            self._cluster_subnet = subnets[0]
         else:
             subnet_range = ipaddress.ip_network(
                 config.CONF.k8s.cluster_vip_subnet)
