@@ -98,8 +98,7 @@ class Raven(service.Service):
             max_workers=config.CONF.raven.max_workers)
         self._sequential_executor = futures.ThreadPoolExecutor(max_workers=1)
         self._event_loop = asyncio.new_event_loop()
-        self._event_loop.set_default_executor(
-            self._executor)
+        self._event_loop.set_default_executor(self._executor)
         self._event_cache = k_collections.Cache()
         self._tasks = {}
         self._reconnect = True
@@ -281,10 +280,9 @@ class Raven(service.Service):
             task.add_done_callback(self._task_done_callback)
             self._tasks[task] = endpoint
 
-        self._event_loop.add_signal_handler(
-            signal.SIGTERM, self.stop)
-        self._event_loop.add_signal_handler(
-            signal.SIGINT, self.stop)
+        self._event_loop.add_signal_handler(signal.SIGTERM, self.stop)
+        self._event_loop.add_signal_handler(signal.SIGINT, self.stop)
+
         try:
             self._event_loop.run_forever()
         except Exception as e:
