@@ -352,9 +352,8 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
         metadata['annotations'] = annotations
         # Prepare the mock response of the neutron network that this
         # pod belongs to
-        self.mox.StubOutWithMock(
-            self.fake_raven.neutron,
-            'list_networks')
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_networks')
+
         fake_cluster_network_id = str(uuid.uuid4())
         namespace = metadata['name']
         fake_cluster_network_response = {
@@ -374,9 +373,8 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
 
         # Prepare the mock response of the neutron subnet that this
         # pod belongs to
-        self.mox.StubOutWithMock(
-            self.fake_raven.neutron,
-            'list_subnets')
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
+
         fake_cluster_subnet_id = str(uuid.uuid4())
         fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         fake_cluster_subnet_response = {
@@ -519,9 +517,7 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
 
         # Prepare the mock response of the neutron network that this
         # pod belongs to
-        self.mox.StubOutWithMock(
-            self.fake_raven.neutron,
-            'list_networks')
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_networks')
         fake_cluster_network_id = str(uuid.uuid4())
         namespace = metadata['namespace']
         fake_cluster_network_response = {
@@ -541,9 +537,8 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
 
         # Prepare the mock response of the neutron subnet that this
         # pod belongs to
-        self.mox.StubOutWithMock(
-            self.fake_raven.neutron,
-            'list_subnets')
+        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
+
         fake_cluster_subnet_id = str(uuid.uuid4())
         fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         fake_cluster_subnet_response = {
