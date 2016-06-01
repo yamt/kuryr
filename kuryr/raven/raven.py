@@ -16,6 +16,7 @@ import collections
 from concurrent import futures
 import functools
 import hashlib
+import ipaddress
 import signal
 import sys
 import traceback
@@ -155,7 +156,7 @@ class Raven(service.Service):
             LOG.debug('Created a new default SG {0}'.format(sg))
         self._default_sg = sg['id']
 
-    def _construct_cluster_subnetpool(self, namespace_router):
+    def _construct_subnetpool(self, namespace_router):
         subnetpool_name = HARDCODED_NET_NAME + '-pool'
         subnetpool_prefix = config.CONF.k8s.cluster_subnet_pool
         subnetpools = controllers._get_subnetpools_by_attrs(
@@ -171,6 +172,60 @@ class Raven(service.Service):
                                 'default_prefixlen': DEFAULT_PREFIX_LEN}})
             subnetpool = subnetpool_response['subnetpool']
         self._subnetpool = subnetpool
+
+    def _construct_cluster_network(self, namespace_router):
+        network_name = HARDCODED_NET_NAME + '-cluster-pool'
+        subnet_name = HARDCODED_NET_NAME + '-cluster-pool-subnet'
+        networks = controllers._get_networks_by_attrs(name=network_name)
+        if networks:
+            self._cluster_network = networks[0]
+        else:
+            network_response = self.neutron.create_network(
+                {'network': {'name': network_name}})
+            self._cluster_network = network_response['network']
+            LOG.debug('Created a new cluster network %s',
+                self._cluster_network)
+
+        # Ensure the subnet exists
+        subnets = controllers._get_subnets_by_attrs(
+            name=subnet_name,
+            network_id=self._cluster_network['id'])
+        if subnets:
+            self._cluster_subnet = subnets[0]['subnet']
+        else:
+            subnet_range = ipaddress.ip_network(
+                config.CONF.k8s.cluster_vip_subnet)
+            new_subnet = {
+                'name': subnet_name,
+                'network_id': self._cluster_network['id'],
+                'ip_version': subnet_range.version,
+                'cidr': str(subnet_range),
+                'enable_dhcp': False
+            }
+            subnet_response = self.neutron.create_subnet(
+                {'subnet': new_subnet})
+            self._cluster_subnet = subnet_response['subnet']
+            LOG.debug('Created a new cluster subnet %s', self._cluster_subnet)
+
+        self._ensure_router_port(
+            self._cluster_network['id'],
+            self._cluster_subnet['id'])
+
+    def _ensure_router_port(self, port_network_id, port_subnet_id):
+
+        filtered_service_ports = controllers._get_ports_by_attrs(
+            unique=False, device_owner='network:router_interface',
+            device_id=self._router['id'], network_id=port_network_id)
+
+        service_router_ports = self._get_router_ports_by_subnet_id(
+            port_subnet_id, filtered_service_ports)
+
+        if not service_router_ports:
+            self.neutron.add_interface_router(
+                self._router['id'], {'subnet_id': port_subnet_id})
+        else:
+            LOG.debug('The cluster IP subnet %s is already bound to the '
+                      'router.', port_subnet_id)
 
     def _construct_service_network(self, namespace_router):
         service_network_name = HARDCODED_NET_NAME + '-service'
@@ -238,7 +293,8 @@ class Raven(service.Service):
         router = self._get_or_create_service_router()
         self._router = router
 
-        self._construct_cluster_subnetpool(router)
+        self._construct_subnetpool(router)
+        self._construct_cluster_network(router)
         self._construct_service_network(router)
 
     def _task_done_callback(self, task):
