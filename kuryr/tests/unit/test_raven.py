@@ -560,15 +560,13 @@ class TestRaven(base.TestKuryrBase):
         cluster_sub_name = raven.HARDCODED_NET_NAME + '-cluster-pool-subnet'
         self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
         fake_cluster_subnet_res = {
-            'subnet': {
-                'name': cluster_sub_name,
-                'network_id': cluster_network_id,
-                'ip_version': 4,
-                'subnetpool_id': subnetpool_id,
-                'id': cluster_subnet_id,
-                'cidr': '192.168.2.0/24',
-                'enable_dhcp': True
-            }
+            'name': cluster_sub_name,
+            'network_id': cluster_network_id,
+            'ip_version': 4,
+            'subnetpool_id': subnetpool_id,
+            'id': cluster_subnet_id,
+            'cidr': '192.168.2.0/24',
+            'enable_dhcp': True
         }
         raven.controllers._get_subnets_by_attrs(
             name=cluster_sub_name,
