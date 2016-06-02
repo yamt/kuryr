@@ -74,7 +74,6 @@ class K8sAPIWatcher(object):
         property, the subclasses can just have it as the class level attribute,
         which hides this abstract property.
         """
-        pass
 
     @abc.abstractmethod
     def translate(self, deserialized_json):
@@ -91,7 +90,6 @@ class K8sAPIWatcher(object):
         :param deserialized_json: the deserialized JSON resoponse from the
                                   apiserver
         """
-        pass
 
 
 class K8sPodsWatcher(K8sAPIWatcher):
