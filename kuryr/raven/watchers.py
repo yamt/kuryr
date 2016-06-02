@@ -269,11 +269,11 @@ class K8sPodsWatcher(K8sAPIWatcher):
                 port = created_port['port']
                 LOG.debug("Successfully create a port {}.".format(port))
             except n_exceptions.NeutronClientException as ex:
-                # REVISIT(yamamoto): We ought to report to a user.
-                # eg. marking the pod error.
-                LOG.error(_LE("Error happened during creating a"
-                              " Neutron port: {0}").format(ex))
-                raise
+                with excutils.save_and_reraise_exception():
+                    # REVISIT(yamamoto): We ought to report to a user.
+                    # eg. marking the pod error.
+                    LOG.error(_LE("Error happened during creating a"
+                                  " Neutron port: {0}").format(ex))
             path = metadata.get('selfLink', '')
             annotations.update(
                 {constants.K8S_ANNOTATION_PORT_KEY: jsonutils.dumps(port)})
@@ -292,9 +292,9 @@ class K8sPodsWatcher(K8sAPIWatcher):
                 try:
                     yield from self.delegate(self.neutron.delete_port, port_id)
                 except n_exceptions.NeutronClientException as ex:
-                    LOG.error(_LE("Error happend during deleting a"
-                                  " Neutron port: {0}").format(ex))
-                    raise
+                    with excutils.save_and_reraise_exception():
+                        LOG.error(_LE("Error happend during deleting a"
+                                      " Neutron port: {0}").format(ex))
                 LOG.debug("Successfully deleted the neutron port.")
             else:
                 LOG.debug('Deletion event without neutron port information. '
@@ -315,11 +315,11 @@ class K8sPodsWatcher(K8sAPIWatcher):
                     port = updated_port['port']
                     LOG.debug("Successfully update a port {}.".format(port))
                 except n_exceptions.NeutronClientException as ex:
-                    # REVISIT(yamamoto): We ought to report to a user.
-                    # eg. marking the pod error.
-                    LOG.error(_LE("Error happened during updating a"
-                                  " Neutron port: {0}").format(ex))
-                    raise
+                    with excutils.save_and_reraise_exception():
+                        # REVISIT(yamamoto): We ought to report to a user.
+                        # eg. marking the pod error.
+                        LOG.error(_LE("Error happened during updating a"
+                                      " Neutron port: {0}").format(ex))
                 # REVISIT(yamamoto): Do we want to update the annotation
                 # with the new SG?  Probably.  Note that updating
                 # annotation here would yield another MODIFIED_EVENT.
@@ -471,9 +471,9 @@ class K8sNamespaceWatcher(K8sAPIWatcher):
                     self.neutron.delete_network(
                         neutron_network_id)
                 except n_exceptions.NeutronClientException as ex:
-                    LOG.error(_LE("Error happend during deleting a"
-                                  " Neutron Network: {0}"), ex)
-                    raise
+                    with excutils.save_and_reraise_exception():
+                        LOG.error(_LE("Error happend during deleting a"
+                                      " Neutron Network: {0}"), ex)
                 LOG.debug("Successfully deleted the neutron network.")
             else:
                 LOG.debug('Deletion event without neutron network information.'
@@ -605,9 +605,9 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 pool = created_pool['pool']
                 LOG.debug('Succeeded to created a pool %s', pool)
             except n_exceptions.NeutronClientException as ex:
-                LOG.error(_LE("Error happened during creating a"
-                              " Neutron pool: %s"), ex)
-                raise
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_LE("Error happened during creating a"
+                                  " Neutron pool: %s"), ex)
 
             path = metadata.get('selfLink', '')
             annotations.update(
