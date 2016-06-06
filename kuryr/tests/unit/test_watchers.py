@@ -791,11 +791,9 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
 
         path = metadata['selfLink']
         self.mox.StubOutWithMock(watchers, '_update_annotation')
-        none_future = asyncio.Future(loop=self.fake_raven._event_loop)
-        none_future.set_result(None)
         watchers._update_annotation(
             self.fake_raven.delegate, path, 'Service', annotations).AndReturn(
-            none_future)
+            self.none_future)
 
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
@@ -823,8 +821,6 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         metadata.update({'annotations': annotations})
 
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
-        none_future = asyncio.Future(loop=self.fake_raven._event_loop)
-        none_future.set_result(None)
 
         fake_vips_future = asyncio.Future(loop=self.fake_raven._event_loop)
         if does_pool_exist:
@@ -837,7 +833,7 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         if does_pool_exist:
             self.fake_raven.delegate(
                 self.fake_raven.neutron.delete_vip, fake_vip_id).AndReturn(
-                none_future)
+                self.none_future)
 
         fake_pools_future = asyncio.Future(loop=self.fake_raven._event_loop)
         if does_vip_exist:
@@ -850,7 +846,7 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         if does_vip_exist:
             self.fake_raven.delegate(
                 self.fake_raven.neutron.delete_pool, fake_pool_id).AndReturn(
-                none_future)
+                self.none_future)
 
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
