@@ -752,9 +752,7 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         fake_pool_id = str(uuid.uuid4())
         fake_pool_response = copy.deepcopy(pool_request)
         fake_pool_response['pool']['id'] = fake_pool_id
-        fake_pool_response_future = asyncio.Future(
-            loop=self.fake_raven._event_loop)
-        fake_pool_response_future.set_result(fake_pool_response)
+        fake_pool_response_future = self.make_future(fake_pool_response)
 
         self.mox.StubOutWithMock(self.fake_raven, 'delegate')
         self.fake_raven.delegate(
@@ -779,9 +777,7 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         }
         fake_vip_response = copy.deepcopy(vip_request)
         fake_vip_response['vip']['id'] = fake_vip_id
-        fake_vip_response_future = asyncio.Future(
-            loop=self.fake_raven._event_loop)
-        fake_vip_response_future.set_result(fake_vip_response)
+        fake_vip_response_future = self.make_future(fake_vip_response)
         self.fake_raven.delegate(
             self.fake_raven.neutron.create_vip, vip_request).AndReturn(
             fake_vip_response_future)
@@ -826,11 +822,11 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         none_future = asyncio.Future(loop=self.fake_raven._event_loop)
         none_future.set_result(None)
 
-        fake_vips_future = asyncio.Future(loop=self.fake_raven._event_loop)
         if does_pool_exist:
-            fake_vips_future.set_result({'vips': [fake_vip]})
+            fake_vips_response = {'vips': [fake_vip]}
         else:
-            fake_vips_future.set_result({'vips': []})
+            fake_vips_response = {'vips': []}
+        fake_vips_future = self.make_future(fake_vips_response)
         self.fake_raven.delegate(
             self.fake_raven.neutron.list_vips, id=fake_vip_id).AndReturn(
             fake_vips_future)
@@ -839,11 +835,11 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
                 self.fake_raven.neutron.delete_vip, fake_vip_id).AndReturn(
                 none_future)
 
-        fake_pools_future = asyncio.Future(loop=self.fake_raven._event_loop)
         if does_vip_exist:
-            fake_pools_future.set_result({'pools': [fake_pool]})
+            fake_pools_response = {'pools': [fake_pool]}
         else:
-            fake_pools_future.set_result({'pools': []})
+            fake_pools_response = {'pools': []}
+        fake_pools_future = self.make_future(fake_pools_response)
         self.fake_raven.delegate(
             self.fake_raven.neutron.list_pools, id=fake_pool_id).AndReturn(
             fake_pools_future)
@@ -878,11 +874,10 @@ class TestK8sEndpointsWatcher(TestK8sWatchersBase):
             {'annotations':
              {constants.K8S_ANNOTATION_POOL_KEY: jsonutils.dumps(fake_pool)}})
 
-        fake_service_future = asyncio.Future(loop=self.fake_raven._event_loop)
         fake_service_response = test_raven._FakeResponse(
             utils.utf8_json_encoder(fake_service_object),
             loop=self.fake_raven._event_loop)
-        fake_service_future.set_result(fake_service_response)
+        fake_service_future = self.make_future(fake_service_response)
         fake_namespace = fake_service_object['metadata']['namespace']
         fake_service_name = fake_service_object['metadata']['name']
         endpoint = utils.get_service_endpoint(
@@ -907,14 +902,11 @@ class TestK8sEndpointsWatcher(TestK8sWatchersBase):
         fake_member_response = {'member': copy.deepcopy(fake_member)}
         # The request doesn't have the "id" attribute.
         del fake_member['id']
-        fake_member_future = asyncio.Future(loop=self.fake_raven._event_loop)
-        fake_member_future.set_result(fake_member_response)
+        fake_member_future = self.make_future(fake_member_response)
 
         self.mox.StubOutWithMock(self.fake_raven, 'sequential_delegate')
         if fake_endpoints_event['type'] == watchers.MODIFIED_EVENT:
-            fake_empty_members_future = asyncio.Future(
-                loop=self.fake_raven._event_loop)
-            fake_empty_members_future.set_result({'members': []})
+            fake_empty_members_future = self.make_future({'members': []})
             self.fake_raven.sequential_delegate(
                 mox.IsA(self.fake_raven.neutron.list_members),
                 pool_id=fake_member['pool_id'], address=fake_member['address'],
