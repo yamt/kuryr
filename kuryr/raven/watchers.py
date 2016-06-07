@@ -847,6 +847,13 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
         metadata = content.get('metadata', {})
         subsets = content.get('subsets', [])
 
+        # FIXME(tfukushima): Ignore DELETED events for now.
+        if event_type == DELETED_EVENT:
+            LOG.info(_LI('Ignoring DELETED events. Pool members are deleted '
+                         'when the service and corresponding pool are '
+                         'deleted.'))
+            return
+
         namespace = metadata.get('namespace',
                                  constants.K8S_DEFAULT_NAMESPACE)
         service_name = metadata['name']
