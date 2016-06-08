@@ -555,12 +555,15 @@ class K8sServicesWatcher(K8sAPIWatcher):
         content = decoded_json.get('object', {})
         metadata = content.get('metadata', {})
         annotations = metadata.get('annotations', {})
+        service_name = metadata.get('name', '')
+        if service_name == 'kubernetes':
+            LOG.debug('Ignore "kubernetes" infra service')
+            return
         if event_type == ADDED_EVENT:
             if constants.K8S_ANNOTATION_POOL_KEY in annotations:
                 LOG.debug('Ignore an ADDED event as the pool already has a '
                           'neutron port')
                 return
-            service_name = metadata.get('name', '')
             namespace = metadata.get(
                 'namespace', constants.K8S_DEFAULT_NAMESPACE)
             cluster_subnet_name = utils.get_subnet_name(namespace)
