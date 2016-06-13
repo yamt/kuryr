@@ -38,14 +38,14 @@ printf " \e[32mDONE\e[39m\n"
 
 attempts=0
 printf "Checking if kubernetes API is running...."
-until [[ ${attempts} -gt 15 ]] || curl http://localhost:8080 &> /dev/null; do
+until [[ ${attempts} -gt 45 ]] || curl http://localhost:8080 &> /dev/null; do
 
   attempts=$((attempts+1))
   printf "."
   sleep 5
 done
 
-if [[ ${attempts} -gt 15 ]]; then
+if [[ ${attempts} -gt 45 ]]; then
   printf " \e[91mFAIL\e[39m\n\n"
   printf "For some reason the Kubernetes API hasn't spawned. Please debugg the error at %s/sandbox_log" "${LOG_DIR}"
   printf "\e[39m\n\n"

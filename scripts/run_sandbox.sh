@@ -1,5 +1,6 @@
 #!/bin/bash
 SANDBOX_VERSION=${SANDBOX_VERSION:-dev}
+SANDBOX_PULL=${SANDBOX_PULL:-true}
 
 if [[ "$1" == "start" ]]; then
 
@@ -16,7 +17,12 @@ if [[ "$1" == "start" ]]; then
     # TODO(devvesa): uncomment these lines once artifactory is ready
     # Pulling all the images
     # echo "Pulling all the needed images"
-    sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg build-all k8s+5+liberty
+    if [[ ${SANDBOX_PULL} == "true" ]]; then
+        sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg pull-all k8s+5+liberty
+    else 
+        # Build the images
+        sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg build-all k8s+5+liberty
+    fi
 
     echo "Running the development version"
     sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg run --name=k8s --provision=/tmp/kuryr_dev/sandbox/keystone-provisioning.sh $SANDBOX_VERSION
