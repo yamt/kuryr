@@ -593,7 +593,7 @@ class K8sServicesWatcher(K8sAPIWatcher):
             # Assume there's the only single port spec.
             port = service_ports[0]
             protocol = port['protocol']
-            protocol_port = port['targetPort']
+            protocol_port = port['port']
             pool_request = {
                 'pool': {
                     'name': service_name,

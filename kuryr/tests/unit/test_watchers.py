@@ -740,7 +740,7 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         service_ports = service_spec.get('ports', [])
         port = service_ports[0]
         protocol = port['protocol']
-        protocol_port = port['targetPort']
+        protocol_port = port['port']
         pool_request = {
             'pool': {
                 'name': service_name,
