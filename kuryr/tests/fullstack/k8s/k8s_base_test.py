@@ -14,6 +14,7 @@ import docker
 from oslo_serialization import jsonutils
 from oslotest import base
 
+from kuryr.common import constants
 from kuryr.tests.fullstack.k8s import k8s_client
 from kuryr import utils
 from neutronclient.common import exceptions
@@ -34,8 +35,41 @@ class K8sBaseTest(base.BaseTestCase):
 
     def tearDown(self):
         """Delete all the objects generated on the tests."""
-        self.k8s.delete_all_pods()
+        self.k8s.delete_all()
         super(K8sBaseTest, self).tearDown()
+
+    def assertNeutronNetwork(self, ns):
+        """Ensure that a Neutron Network has been created.
+
+        Given a created K8s namespace, check out that a network
+        and a subnet in Neutron have been created.
+        """
+        self.assertTrue(ns.exists())
+        self.assertIn('annotations', ns.obj['metadata'])
+        annotations = ns.obj['metadata']['annotations']
+        self.assertIn(constants.K8S_ANNOTATION_NETWORK_KEY,
+                      annotations)
+        self.assertIn(constants.K8S_ANNOTATION_SUBNET_KEY,
+                      annotations)
+        network_annotation = jsonutils.loads(
+            annotations[constants.K8S_ANNOTATION_NETWORK_KEY])
+        subnet_annotation = jsonutils.loads(
+            annotations[constants.K8S_ANNOTATION_SUBNET_KEY])
+
+        # Check out neutron data
+        exception_raised = False
+        try:
+            network = self.neutron.show_network(
+                network_annotation['id'])['network']
+            subnet = self.neutron.show_subnet(
+                subnet_annotation['id'])['subnet']
+        except exceptions.NotFound:
+            exception_raised = True
+        self.assertFalse(exception_raised,
+                         "Neutron network or subnet not created")
+
+        self.assertEqual(network['name'], ns.name)
+        self.assertEqual(subnet['name'], ("%s-subnet" % ns.name))
 
     def assertNeutronPort(self, pod):
         """Ensure that the pod has a neutron port.
@@ -48,9 +82,10 @@ class K8sBaseTest(base.BaseTestCase):
         """
         self.assertIn('annotations', pod.obj['metadata'])
         annotations = pod.obj['metadata']['annotations']
-        self.assertIn('kuryr.org/neutron-port', annotations)
+        self.assertIn(constants.K8S_ANNOTATION_PORT_KEY,
+                      annotations)
         port_annotation = jsonutils.loads(
-            annotations['kuryr.org/neutron-port'])
+            annotations[constants.K8S_ANNOTATION_PORT_KEY])
 
         exception_raised = False
         try:

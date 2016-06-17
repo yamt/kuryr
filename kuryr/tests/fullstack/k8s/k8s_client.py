@@ -58,21 +58,37 @@ class K8sTestClient(object):
     def __init__(self, context_file):
         self.api = pykube.HTTPClient(pykube.KubeConfig.from_file(context_file))
 
-    def _wait_until_created(self, obj, max_attempts=1000):
+    def _wait_until_created(self, obj, label, max_attempts=1000):
         """Waits until a kubernetes object is in 'Ready' status. """
 
         # TODO(devvesa): Improve this loop somehow
-        attempts = 0
-        while attempts < max_attempts and not obj.ready:
+        if hasattr(obj, 'ready'):
+            attempts_ready = 0
+            while attempts_ready < max_attempts and not obj.ready:
+                time.sleep(0.5)
+                obj.reload()
+                attempts_ready += 1
+
+            if not obj.ready:
+                obj.delete()
+                raise Exception("%(kind)s %(name)s took too much time "
+                                "to be created." %
+                                {'kind': obj.kind, 'name': obj.name})
+
+        # Make sure the neutron object has been created and the
+        # kubernetes object updated
+        attempts_neutron = 0
+        while attempts_neutron < max_attempts:
+            if 'annotations' in obj.obj['metadata']:
+                if label in obj.obj['metadata']['annotations']:
+                    return
+
             time.sleep(0.5)
             obj.reload()
-            attempts += 1
+            attempts_neutron += 1
 
-        if obj.ready:
-            return
-
-        obj.delete()
-        raise Exception("%(kind)s %(name)s took too much time to be created." %
+        raise Exception("%(kind)s %(name)s took too much time "
+                        "to be created." %
                         {'kind': obj.kind, 'name': obj.name})
 
     def create_pod(self,
@@ -101,12 +117,56 @@ class K8sTestClient(object):
         }
         pod = pykube.Pod(self.api, obj)
         pod.create()
-        self._wait_until_created(pod)
+        self._wait_until_created(pod, label='kuryr.org/neutron-port')
         return pod
 
-    def delete_all_pods(self):
-        """Delete pod."""
-        query = pykube.Pod.objects(self.api).filter(
-            selector={'environment__in': {'test'}})
-        for pod in query:
-            pod.delete()
+    def create_namespace(self,
+                         name='test-namespace'):
+        """Create a namespace. """
+        obj = {
+            'apiVersion': 'v1',
+            'kind': 'Namespace',
+            'metadata': {
+                'name': name,
+                'labels': {
+                    'environment': 'test'
+                },
+            }
+        }
+        ns = pykube.Namespace(self.api, obj)
+        ns.create()
+        self._wait_until_created(ns, label='kuryr.org/neutron-network')
+        return ns
+
+    def delete_obj(self, obj, max_attempts=120):
+
+        try:
+            obj.delete()
+        except pykube.exceptions.HTTPError:
+            # There is a conflict error raised eventually that just
+            # tells the K8s api requester to wait. Skip it
+            pass
+
+        attempts = 0
+        while attempts < max_attempts and obj.exists():
+            time.sleep(0.5)
+            attempts += 1
+
+        if not obj.exists():
+            return
+
+        raise Exception("%(kind)s %(name)s took too much time to be deleted."
+                        "Manual cleaning is required!" %
+                        {'kind': obj.kind, 'name': obj.name})
+
+    def delete_all(self):
+        """Delete all pods created."""
+        query_ns = pykube.Namespace.objects(self.api).all()
+        for ns in query_ns:
+            query = pykube.Pod.objects(self.api).filter(
+                namespace=ns.name,
+                selector={'environment__in': {'test'}})
+            for pod in query:
+                self.delete_obj(pod)
+            if ns.name != 'default':
+                self.delete_obj(ns)
