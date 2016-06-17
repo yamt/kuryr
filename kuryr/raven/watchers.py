@@ -803,6 +803,10 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
             """
             for subset in subsets:
                 ports = subset['ports']
+                if 'addresses' not in subset:
+                    LOG.debug('Subset %s does not yet have addresses to '
+                              'process', subset)
+                    continue
                 addresses = subset['addresses']
                 # Create members for each combination of the address and the
                 # port.

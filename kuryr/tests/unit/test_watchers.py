@@ -274,6 +274,18 @@ class TestK8sWatchersBase(base.TestKuryrBase):
                 "port": 80,
                 "protocol": "TCP"
             }]
+        }, {
+            'notReadyAddresses': [{
+                'ip': '192.168.0.2',
+                'targetRef': {
+                    'kind': 'Pod',
+                    'name': 'demo-822208025-kl7hx',
+                    'namespace': 'default',
+                    'resourceVersion': '108210',
+                    'uid': '253bcfc4-2be0-11e6-9899-c86000990137'
+                }
+            }],
+            'ports': [{'port': 80, 'protocol': 'TCP'}]
         }]
     }
 
