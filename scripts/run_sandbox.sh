@@ -46,7 +46,6 @@ else
       sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg kill-all
       docker stop $(docker ps -q)
       docker stop $(docker ps -q)
-      docker rm $(docker ps -q -a)
       echo ""
       echo ""
       echo ""
