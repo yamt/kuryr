@@ -56,6 +56,6 @@ printf " \e[32mDONE\e[39m\n"
 # Save logs
 printf "Saving container logs... "
 for i in $(docker ps --filter "name=mnsandbox" --format {{.Names}}); do
-    docker logs --follow $i > "${LOG_DIR}/${i}.log" 2>&1 &
+    docker logs -a --follow $i > "${LOG_DIR}/${i}.log" 2>&1 &
 done
 printf " \e[32mDONE\e[39m\n"
