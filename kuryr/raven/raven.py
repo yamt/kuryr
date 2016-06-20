@@ -363,7 +363,7 @@ class Raven(service.Service):
             LOG.info(_LI('Cancelling all the scheduled tasks'))
             for task, endpoint in self._tasks.items():
                 LOG.info(_LI('Cancelling the watcher for "%s"'), endpoint)
-                task.cancel()
+                self._event_loop.call_soon_threadsafe(task.cancel)
         if self._event_loop.is_running():
             self._event_loop.stop()
         self._executor.shutdown(wait=True)
