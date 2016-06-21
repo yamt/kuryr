@@ -106,6 +106,27 @@ class Raven(service.Service):
         self._reconnect = True
         assert not self._event_loop.is_closed()
 
+        self._lock = asyncio.Lock(loop=self._event_loop)
+        self._resource_version = 0
+
+    @asyncio.coroutine
+    def _update_resource_version(self, resource_version):
+        # Since self._resource_version is accessed by multiple coroutines that
+        # possibly run in the different threads, it needs to be protected by
+        # the lock.
+        with (yield from self._lock):
+            if resource_version > self._resource_version:
+                self._resource_version = resource_version
+                LOG.debug('Updated the resource version to {0}',
+                          self._resource_version)
+
+    def _get_endpoint_with_resource_version(self, endpoint):
+        joint_char = '&' if '?' in endpoint else '?'
+        endpoint_with_resource_version = ''.join(
+            [endpoint, joint_char, 'resourceVersion=',
+             str(self._resource_version)])
+        return endpoint_with_resource_version
+
     @staticmethod
     def _get_router_ports_by_subnet_id(neutron_subnet_id, neutron_port_list):
         router_ports = [
@@ -454,7 +475,8 @@ class Raven(service.Service):
                          response returned by the HTTP call agaisnt the
                          endpoint.
         """
-        response = yield from methods.get(endpoint=endpoint,
+        canonical_endpoint = self._get_endpoint_with_resource_version(endpoint)
+        response = yield from methods.get(endpoint=canonical_endpoint,
                                           loop=self._event_loop,
                                           decoder=utils.utf8_json_decoder)
 
@@ -504,6 +526,12 @@ class Raven(service.Service):
                     continue
 
                 self._event_cache[hashed_content] = self._event_loop.time()
+
+                obj = content.get('object', {})
+                metadata = obj.get('metadata', {})
+                if 'resourceVersion' in metadata:
+                    resource_version = metadata['resourceVersion']
+                    yield from self._update_resource_version(resource_version)
 
                 if asyncio.iscoroutinefunction(callback):
                     task = callback(content)
