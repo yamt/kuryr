@@ -96,6 +96,13 @@ class TestRaven(base.TestKuryrBase):
 
     This test validates if Raven works as the service as it's intended.
     """
+
+    @staticmethod
+    def _get_endpoint_with_resource_version(raven, endpoint):
+        canonical_endpoint = raven._get_endpoint_with_resource_version(
+            endpoint)
+        return canonical_endpoint
+
     def test_wait(self):
         """Checks if the service stops correctly with the noop watch."""
         r = raven.Raven()
@@ -161,7 +168,8 @@ class TestRaven(base.TestKuryrBase):
         responses = collections.deque((
             {'foo': 'bar'},
             {1: '1', 2: '2'},
-            {'kind': 'Pod', 'metadata': {}}))
+            {'kind': 'Pod', 'metadata': {}},
+            {'kind': 'Pod', 'metadata': {'resourceVersion': 42}}))
 
         r = raven.Raven()
         r._reconnect = False
@@ -173,7 +181,9 @@ class TestRaven(base.TestKuryrBase):
         r._ensure_networking_base()
 
         self.mox.StubOutWithMock(raven.methods, 'get')
-        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+        canonical_endpoint = self._get_endpoint_with_resource_version(
+            r, endpoint)
+        raven.methods.get(endpoint=canonical_endpoint, loop=r._event_loop,
                           decoder=utils.utf8_json_decoder).AndReturn(
             _fake_get_response(responses))
 
@@ -389,12 +399,14 @@ class TestRaven(base.TestKuryrBase):
         first_responses = collections.deque(
             ({'foo': 'bar'},
              {1: '1', 2: '2'},
-             {'kind': 'Pod', 'metadata': {}}))
+             {'kind': 'Pod', 'metadata': {}},
+             {'kind': 'Pod', 'metadata': {'resourceVersion': 42}}))
 
         final_responses = collections.deque(
             ({'foo': 'barbarian'},
              {1: '1', 2: '2', 'stop_reconnecting': True},
-             {'kind': 'service', 'metadata': {}}))
+             {'kind': 'service', 'metadata': {}},
+             {'kind': 'service', 'metadata': {'resourceVersion': 42}}))
 
         r = raven.Raven()
         r._reconnect = True
@@ -412,12 +424,16 @@ class TestRaven(base.TestKuryrBase):
         r._ensure_networking_base()
 
         self.mox.StubOutWithMock(raven.methods, 'get')
-        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+        canonical_endpoint = self._get_endpoint_with_resource_version(
+            r, endpoint)
+        raven.methods.get(endpoint=canonical_endpoint, loop=r._event_loop,
                           decoder=utils.utf8_json_decoder).AndReturn(
             _fake_get_response(first_responses))
 
         # We'll reconnect once
-        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+        canonical_endpoint = self._get_endpoint_with_resource_version(
+            r, endpoint)
+        raven.methods.get(endpoint=canonical_endpoint, loop=r._event_loop,
                           decoder=utils.utf8_json_decoder).AndReturn(
             _fake_get_response(final_responses))
 
@@ -450,14 +466,16 @@ class TestRaven(base.TestKuryrBase):
         first_responses = collections.deque(
             ({'foo': 'bar'},
              {1: '1', 2: '2'},
-             {'kind': 'Pod', 'metadata': {}}))
+             {'kind': 'Pod', 'metadata': {}},
+             {'kind': 'Pod', 'metadata': {'resourceVersion': 42}}))
 
         final_responses = collections.deque(
             ({1: '1', 2: '2'},  # Repeated
              {'kind': 'Pod', 'metadata': {}},  # Repeated
              {'foo': 'barbarian'},
              {1: '1', 2: '2', 'stop_reconnecting': True},
-             {'kind': 'service', 'metadata': {}}))
+             {'kind': 'service', 'metadata': {}},
+             {'kind': 'service', 'metadata': {'resourceVersion': 42}}))
 
         r = raven.Raven()
         r._reconnect = True
@@ -475,12 +493,16 @@ class TestRaven(base.TestKuryrBase):
         r._ensure_networking_base()
 
         self.mox.StubOutWithMock(raven.methods, 'get')
-        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+        canonical_endpoint = self._get_endpoint_with_resource_version(
+            r, endpoint)
+        raven.methods.get(endpoint=canonical_endpoint, loop=r._event_loop,
                           decoder=utils.utf8_json_decoder).AndReturn(
             _fake_get_response(first_responses))
 
         # We'll reconnect once
-        raven.methods.get(endpoint=endpoint, loop=r._event_loop,
+        canonical_endpoint = self._get_endpoint_with_resource_version(
+            r, endpoint)
+        raven.methods.get(endpoint=canonical_endpoint, loop=r._event_loop,
                           decoder=utils.utf8_json_decoder).AndReturn(
             _fake_get_response(final_responses))
 
