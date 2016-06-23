@@ -9,18 +9,15 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
-from oslotest import base
+
+from kuryr.tests.fullstack.k8s import k8s_base_test
 
 
-class K8sBaseTest(base.BaseTestCase):
-    """Basic test class.
+class PodToPodTest(k8s_base_test.K8sBaseTest):
 
-    Ensure the connection is done and set the configuration
-    """
-
-    def setUp(self):
-        super(K8sBaseTest, self).setUp()
-
-    def test_dummy(self):
-        """This test at least guarantees that the configuration is ok."""
-        pass
+    def test_create_connected_pods(self):
+        pod1 = self.k8s.create_pod(name='testpod1')
+        pod2 = self.k8s.create_pod(name='testpod2')
+        self.assertNeutronPort(pod1)
+        self.assertNeutronPort(pod2)
+        self.assertPingConnection(pod1, pod2)
