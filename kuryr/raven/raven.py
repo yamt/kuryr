@@ -105,6 +105,16 @@ class Raven(service.Service):
 
         self._lock = asyncio.Lock(loop=self._event_loop)
         self._resource_version = 0
+        self._namespace_lock = asyncio.Lock(loop=self._event_loop)
+        self.namespace_added = asyncio.Condition(
+            lock=self._namespace_lock, loop=self._event_loop)
+        self.namespace_deleted = asyncio.Condition(
+            lock=self._namespace_lock, loop=self._event_loop)
+        self._service_lock = asyncio.Lock(loop=self._event_loop)
+        self.service_added = asyncio.Condition(
+            lock=self._service_lock, loop=self._event_loop)
+        self.service_deleted = asyncio.Condition(
+            lock=self._service_lock, loop=self._event_loop)
 
     @asyncio.coroutine
     def _update_resource_version(self, resource_version):

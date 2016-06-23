@@ -358,11 +358,13 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
         metadata = fake_namespace_added_event['object']['metadata']
         fake_cluster_network_id = str(uuid.uuid4())
 
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_networks')
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'create_network')
-        self.fake_raven.neutron.list_networks(
-            name=metadata['name']).AndReturn(
-                    {'networks': []})
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        # self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_networks')
+        # self.mox.StubOutWithMock(self.fake_raven.neutron, 'create_network')
+        fake_empty_networks_future = self.make_future({'networks': []})
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_networks,
+            name=metadata['name']).AndReturn(fake_empty_networks_future)
         fake_cluster_network_req = {
             'network': {
                 'name': metadata['name']
@@ -380,17 +382,18 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
                 'id': fake_cluster_network_id
             }
         }
-        self.fake_raven.neutron.create_network(
-            fake_cluster_network_req).AndReturn(
-                fake_cluster_network_res)
+        fake_cluster_networks_future = self.make_future(
+            fake_cluster_network_res)
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.create_network,
+            fake_cluster_network_req).AndReturn(fake_cluster_networks_future)
 
         # Return no subnets and create a new one
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'create_subnet')
-
         fake_cluster_subnet_name = utils.get_subnet_name(namespace)
-        self.fake_raven.neutron.list_subnets(
-                name=fake_cluster_subnet_name).AndReturn({'subnets': []})
+        fake_empty_subnets_future = self.make_future({'subnets': []})
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_subnets,
+            name=fake_cluster_subnet_name).AndReturn(fake_empty_subnets_future)
         fake_cluster_subnet_id = str(uuid.uuid4())
         fake_cluster_subnet_req = {
             'subnet': {
@@ -407,25 +410,25 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
         fake_cluster_subnet_res['subnet']['cidr'] = '192.168.2.0/24'
         fake_cluster_subnet_res['subnet']['enable_dhcp'] = True
         self.fake_raven._router['id'] = str(uuid.uuid4())
-        self.fake_raven.neutron.create_subnet(
-            fake_cluster_subnet_req).AndReturn(
-                fake_cluster_subnet_res)
+        fake_cluster_subnets_future = self.make_future(fake_cluster_subnet_res)
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.create_subnet,
+            fake_cluster_subnet_req).AndReturn(fake_cluster_subnets_future)
 
         # Return no port and create a new one
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_ports')
-        self.mox.StubOutWithMock(self.fake_raven.neutron,
-                                 'add_interface_router')
-
-        self.fake_raven.neutron.list_ports(
-                device_owner='network:router_interface',
-                device_id=self.fake_raven._router['id'],
-                network_id=fake_cluster_network_id).AndReturn({'ports': []})
-        self.fake_raven.neutron.add_interface_router(
-                self.fake_raven._router['id'],
-                {'subnet_id': fake_cluster_subnet_id}).AndReturn(None)
+        fake_empty_ports_future = self.make_future({'ports': []})
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_ports,
+            device_owner='network:router_interface',
+            device_id=self.fake_raven._router['id'],
+            network_id=fake_cluster_network_id).AndReturn(
+            fake_empty_ports_future)
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.add_interface_router,
+            self.fake_raven._router['id'],
+            {'subnet_id': fake_cluster_subnet_id}).AndReturn(self.none_future)
 
         # Mock the patch call
-        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
         fake_patch_response_future = self.make_future(_FakeSuccessResponse())
 
         self.fake_raven.delegate(
@@ -452,10 +455,10 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
 
         metadata = fake_namespace_added_event['object']['metadata']
         metadata['annotations'] = annotations
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+
         # Prepare the mock response of the neutron network that this
         # pod belongs to
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_networks')
-
         fake_cluster_network_id = str(uuid.uuid4())
         namespace = metadata['name']
         fake_cluster_network_response = {
@@ -469,14 +472,14 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
                 'id': fake_cluster_network_id}
             ],
         }
-        self.fake_raven.neutron.list_networks(
-            name=namespace).AndReturn(
-                fake_cluster_network_response)
+        fake_cluster_networks_future = self.make_future(
+            fake_cluster_network_response)
+        self.fake_raven.delegate(self.fake_raven.neutron.list_networks,
+                                 name=namespace).AndReturn(
+            fake_cluster_networks_future)
 
         # Prepare the mock response of the neutron subnet that this
         # pod belongs to
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
-
         fake_cluster_subnet_id = str(uuid.uuid4())
         fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         fake_cluster_subnet_response = {
@@ -488,15 +491,15 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
                 'cidr': '192.168.2.0/24'}
             ],
         }
-        self.fake_raven.neutron.list_subnets(
-            name=fake_cluster_subnet_name).AndReturn(
-                fake_cluster_subnet_response)
+        fake_subnets_future = self.make_future(fake_cluster_subnet_response)
+        self.fake_raven.delegate(self.fake_raven.neutron.list_subnets,
+                                 name=fake_cluster_subnet_name).AndReturn(
+            fake_subnets_future)
 
         # Fake router id
         self.fake_raven._router['id'] = str(uuid.uuid4())
 
         # Fake port attached to the router
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_ports')
         port_id = str(uuid.uuid4())
         tenant_id = str(uuid.uuid4())
         fake_namespace_port = {
@@ -511,12 +514,12 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
             "id": port_id,
             "device_id": self.fake_raven._router['id'],
         }
-        self.fake_raven.neutron.list_ports(
-                device_owner='network:router_interface',
-                device_id=self.fake_raven._router['id'],
-                network_id=fake_cluster_network_id).AndReturn(
-                        {'ports': [fake_namespace_port]})
-        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        fake_ports_future = self.make_future({'ports': [fake_namespace_port]})
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_ports,
+            device_owner='network:router_interface',
+            device_id=self.fake_raven._router['id'],
+            network_id=fake_cluster_network_id).AndReturn(fake_ports_future)
 
         # Mock the patch call
         fake_patch_response_future = self.make_future(_FakeSuccessResponse())
@@ -575,15 +578,19 @@ class TestK8sNamespaceWatcher(TestK8sWatchersBase):
 
         # Delete network
         self.fake_raven._router['id'] = str(uuid.uuid4())
-        self.mox.StubOutWithMock(self.fake_raven.neutron,
-                                 'remove_interface_router')
-        self.fake_raven.neutron.remove_interface_router(
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.remove_interface_router,
             self.fake_raven._router['id'],
-            {'subnet_id': fake_cluster_subnet_id}).AndReturn(None)
-        self.mox.StubOutWithMock(self.fake_raven.neutron,
-                                 'delete_network')
-        self.fake_raven.neutron.delete_network(
-            fake_cluster_network_id)
+            {'subnet_id': fake_cluster_subnet_id}).AndReturn(self.none_future)
+        fake_empty_ports_future = self.make_future({'ports': []})
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_ports,
+            network_id=fake_cluster_network_id).AndReturn(
+            fake_empty_ports_future)
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.delete_network,
+            fake_cluster_network_id).AndReturn(self.none_future)
 
         self.mox.ReplayAll()
         self.fake_raven._event_loop.run_until_complete(
@@ -616,9 +623,10 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
         fake_port_future = self.make_future({'port': fake_port})
         metadata = fake_pod_added_event['object']['metadata']
 
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+
         # Prepare the mock response of the neutron network that this
         # pod belongs to
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_networks')
         fake_cluster_network_id = str(uuid.uuid4())
         namespace = metadata['namespace']
         fake_cluster_network_response = {
@@ -632,14 +640,15 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
                 'id': fake_cluster_network_id}
             ],
         }
-        self.fake_raven.neutron.list_networks(
+        fake_cluster_networks_future = self.make_future(
+            fake_cluster_network_response)
+        self.fake_raven.delegate(
+            self.fake_raven.neutron.list_networks,
             name=metadata['namespace']).AndReturn(
-                fake_cluster_network_response)
+                fake_cluster_networks_future)
 
         # Prepare the mock response of the neutron subnet that this
         # pod belongs to
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
-
         fake_cluster_subnet_id = str(uuid.uuid4())
         fake_cluster_subnet_name = utils.get_subnet_name(namespace)
         fake_cluster_subnet_response = {
@@ -653,9 +662,11 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
         }
         namespace = metadata['namespace']
         fake_cluster_subnet_name = utils.get_subnet_name(namespace)
-        self.fake_raven.neutron.list_subnets(
-            name=fake_cluster_subnet_name).AndReturn(
-                fake_cluster_subnet_response)
+        fake_cluster_subnets_future = self.make_future(
+            fake_cluster_subnet_response)
+        self.fake_raven.delegate(self.fake_raven.neutron.list_subnets,
+                      name=fake_cluster_subnet_name).AndReturn(
+            fake_cluster_subnets_future)
 
         new_port = {
             'name': metadata.get('name', ''),
@@ -665,7 +676,6 @@ class TestK8sPodsWatcher(TestK8sWatchersBase):
             'fixed_ips': [{'subnet_id': fake_cluster_subnet_id}],
             'security_groups': [self.fake_raven._default_sg],
         }
-        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
         self.fake_raven.delegate(
             mox.IsA(self.fake_raven.neutron.create_port),
             {'port': new_port}).AndReturn(fake_port_future)
@@ -743,11 +753,14 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         service_name = metadata.get('name', '')
         namespace = metadata.get(
             'namespace', constants.K8S_DEFAULT_NAMESPACE)
-        self.mox.StubOutWithMock(self.fake_raven.neutron, 'list_subnets')
+        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
+
         fake_cluster_subnet_name = utils.get_subnet_name(namespace)
-        self.fake_raven.neutron.list_subnets(
-            name=fake_cluster_subnet_name).AndReturn(
+        fake_cluster_subnets_future = self.make_future(
             {'subnets': [self.fake_raven._subnet]})
+        self.fake_raven.delegate(self.fake_raven.neutron.list_subnets,
+                                 name=fake_cluster_subnet_name).AndReturn(
+            fake_cluster_subnets_future)
         service_spec = content.get('spec', {})
         service_ports = service_spec.get('ports', [])
         port = service_ports[0]
@@ -766,7 +779,6 @@ class TestK8sServicesWatcher(TestK8sWatchersBase):
         fake_pool_response['pool']['id'] = fake_pool_id
         fake_pool_response_future = self.make_future(fake_pool_response)
 
-        self.mox.StubOutWithMock(self.fake_raven, 'delegate')
         self.fake_raven.delegate(
             self.fake_raven.neutron.create_pool, pool_request).AndReturn(
             fake_pool_response_future)
