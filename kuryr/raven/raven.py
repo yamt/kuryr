@@ -15,7 +15,6 @@ import asyncio
 import collections
 from concurrent import futures
 import functools
-import hashlib
 import ipaddress
 import signal
 import sys
@@ -28,7 +27,6 @@ import requests
 
 from kuryr._i18n import _LE
 from kuryr._i18n import _LI
-from kuryr.common import collections as k_collections
 from kuryr.common import config
 from kuryr import controllers
 from kuryr.raven.aio import headers
@@ -101,7 +99,6 @@ class Raven(service.Service):
         self._sequential_executor = futures.ThreadPoolExecutor(max_workers=1)
         self._event_loop = asyncio.new_event_loop()
         self._event_loop.set_default_executor(self._executor)
-        self._event_cache = k_collections.Cache()
         self._tasks = {}
         self._reconnect = True
         assert not self._event_loop.is_closed()
@@ -513,20 +510,6 @@ class Raven(service.Service):
                     self._tasks[next_watch] = endpoint
                 break
             else:
-                hashed_content = hashlib.md5(str(content).encode()).hexdigest()
-                if hashed_content in self._event_cache:
-                    LOG.info(_LI(
-                        'Event with content "%(content)r" already seen at loop'
-                        ' time "%(old_time)s". Current loop time '
-                        '"%(new_time)s". Skipping this already processed '
-                        'event...'),
-                        {'content': content,
-                         'old_time': self._event_cache[hashed_content],
-                         'new_time': self._event_loop.time()})
-                    continue
-
-                self._event_cache[hashed_content] = self._event_loop.time()
-
                 obj = content.get('object', {})
                 metadata = obj.get('metadata', {})
                 if 'resourceVersion' in metadata:
