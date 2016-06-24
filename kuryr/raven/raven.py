@@ -114,7 +114,7 @@ class Raven(service.Service):
         with (yield from self._lock):
             if resource_version > self._resource_version:
                 self._resource_version = resource_version
-                LOG.debug('Updated the resource version to {0}',
+                LOG.debug('Updated the resource version to %s',
                           self._resource_version)
 
     def _get_endpoint_with_resource_version(self, endpoint):
@@ -513,7 +513,7 @@ class Raven(service.Service):
                 obj = content.get('object', {})
                 metadata = obj.get('metadata', {})
                 if 'resourceVersion' in metadata:
-                    resource_version = metadata['resourceVersion']
+                    resource_version = int(metadata['resourceVersion'])
                     yield from self._update_resource_version(resource_version)
 
                 if asyncio.iscoroutinefunction(callback):

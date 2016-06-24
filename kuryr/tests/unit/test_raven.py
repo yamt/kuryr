@@ -169,7 +169,7 @@ class TestRaven(base.TestKuryrBase):
             {'foo': 'bar'},
             {1: '1', 2: '2'},
             {'kind': 'Pod', 'metadata': {}},
-            {'kind': 'Pod', 'metadata': {'resourceVersion': 42}}))
+            {'kind': 'Pod', 'metadata': {'resourceVersion': '42'}}))
 
         r = raven.Raven()
         r._reconnect = False
@@ -400,13 +400,13 @@ class TestRaven(base.TestKuryrBase):
             ({'foo': 'bar'},
              {1: '1', 2: '2'},
              {'kind': 'Pod', 'metadata': {}},
-             {'kind': 'Pod', 'metadata': {'resourceVersion': 42}}))
+             {'kind': 'Pod', 'metadata': {'resourceVersion': '42'}}))
 
         final_responses = collections.deque(
             ({'foo': 'barbarian'},
              {1: '1', 2: '2', 'stop_reconnecting': True},
              {'kind': 'service', 'metadata': {}},
-             {'kind': 'service', 'metadata': {'resourceVersion': 42}}))
+             {'kind': 'service', 'metadata': {'resourceVersion': '42'}}))
 
         r = raven.Raven()
         r._reconnect = True
