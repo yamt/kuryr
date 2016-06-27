@@ -25,7 +25,7 @@ printf " \e[32mDONE\e[39m\n"
 printf "Installing the midonet sandbox "
 printf "(this may take quite time if you have never run the test environment before)..."
 pushd "${MIDONET_SANDBOX_SRC_DIR}" \
-  && virtualenv .venv >>"${LOG_DIR}/sandbox_install" 2>&1 \
+  && virtualenv -p python2 .venv >>"${LOG_DIR}/sandbox_install" 2>&1 \
   && source .venv/bin/activate >/dev/null 2>&1 \
   && python setup.py install >>"${LOG_DIR}/sandbox_install" 2>&1 \
   && popd
