@@ -215,7 +215,7 @@ class K8sPodsWatcher(K8sAPIWatcher):
 
         :param decoded_json: A pod event to be translated.
         """
-        LOG.debug("Pod notification {0}".format(decoded_json))
+        LOG.debug("Pod notification %s", decoded_json)
         event_type = decoded_json.get('type', '')
         content = decoded_json.get('object', {})
         metadata = content.get('metadata', {})
@@ -267,7 +267,7 @@ class K8sPodsWatcher(K8sAPIWatcher):
                 created_port = yield from self.delegate(
                     self.neutron.create_port, {'port': new_port})
                 port = created_port['port']
-                LOG.debug("Successfully create a port {}.".format(port))
+                LOG.debug("Successfully create a port %s.", port)
             except n_exceptions.NeutronClientException as ex:
                 with excutils.save_and_reraise_exception():
                     # REVISIT(yamamoto): We ought to report to a user.
@@ -294,7 +294,7 @@ class K8sPodsWatcher(K8sAPIWatcher):
                 except n_exceptions.NeutronClientException as ex:
                     with excutils.save_and_reraise_exception():
                         LOG.error(_LE("Error happend during deleting a"
-                                      " Neutron port: {0}").format(ex))
+                                      " Neutron port: %s"), ex)
                 LOG.debug("Successfully deleted the neutron port.")
             else:
                 LOG.debug('Deletion event without neutron port information. '
@@ -313,13 +313,13 @@ class K8sPodsWatcher(K8sAPIWatcher):
                         self.neutron.update_port,
                         port=port_id, body={'port': update_req})
                     port = updated_port['port']
-                    LOG.debug("Successfully update a port {}.".format(port))
+                    LOG.debug("Successfully update a port %s.", port)
                 except n_exceptions.NeutronClientException as ex:
                     with excutils.save_and_reraise_exception():
                         # REVISIT(yamamoto): We ought to report to a user.
                         # eg. marking the pod error.
                         LOG.error(_LE("Error happened during updating a"
-                                      " Neutron port: {0}").format(ex))
+                                      " Neutron port: %s"), ex)
                 # REVISIT(yamamoto): Do we want to update the annotation
                 # with the new SG?  Probably.  Note that updating
                 # annotation here would yield another MODIFIED_EVENT.
@@ -393,8 +393,7 @@ class K8sNamespaceWatcher(K8sAPIWatcher):
                 network_response = self.neutron.create_network(
                     {'network': {'name': namespace_network_name}})
                 namespace_network = network_response['network']
-                LOG.debug('Created a new network {0}'.format(
-                    namespace_network))
+                LOG.debug('Created a new network %s', namespace_network)
                 annotations.update(
                     {constants.K8S_ANNOTATION_NETWORK_KEY: jsonutils.dumps(
                         namespace_network)})
@@ -473,7 +472,7 @@ class K8sNamespaceWatcher(K8sAPIWatcher):
                 except n_exceptions.NeutronClientException as ex:
                     with excutils.save_and_reraise_exception():
                         LOG.error(_LE("Error happend during deleting a"
-                                      " Neutron Network: {0}"), ex)
+                                      " Neutron Network: %s"), ex)
                 LOG.debug("Successfully deleted the neutron network.")
             else:
                 LOG.debug('Deletion event without neutron network information.'
@@ -550,7 +549,7 @@ class K8sServicesWatcher(K8sAPIWatcher):
 
         :param decoded_json: A service event to be translated.
         """
-        LOG.debug("Service notification {0}".format(decoded_json))
+        LOG.debug("Service notification %s", decoded_json)
         event_type = decoded_json.get('type', '')
         content = decoded_json.get('object', {})
         metadata = content.get('metadata', {})
@@ -634,7 +633,7 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 created_vip = yield from self.delegate(
                     self.neutron.create_vip, vip_request)
                 vip = created_vip['vip']
-                LOG.debug('Succeeded to created a VIP {0}'.format(vip))
+                LOG.debug('Succeeded to created a VIP %s', vip)
             except n_exceptions.NeutronClientException as ex:
                 LOG.error(_LE("Error happened during creating a"
                               " Neutron VIP: %s"), ex)
@@ -676,15 +675,13 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 if neutron_vips:
                     yield from self.delegate(self.neutron.delete_vip, vip_id)
                 else:
-                    LOG.warning(_LW("The VIP {0} doesn't exist. Ignoring the "
-                                    "deletion of the VIP.")
-                                .format(vip_id))
+                    LOG.warning(_LW("The VIP %s doesn't exist. Ignoring the "
+                                    "deletion of the VIP."), vip_id)
             except n_exceptions.NeutronClientException as ex:
                 with excutils.save_and_reraise_exception():
                     LOG.error(_LE("Error happened during deleting a"
-                                  " Neutron VIP: {0}").format(ex))
-            LOG.debug('Successfully deleted the Neutron VIP {0}'
-                      .format(neutron_vip))
+                                  " Neutron VIP: %s"), ex)
+            LOG.debug('Successfully deleted the Neutron VIP %s', neutron_vip)
 
             try:
                 pool_id = neutron_pool['id']
@@ -694,15 +691,13 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 if neutron_pools:
                     yield from self.delegate(self.neutron.delete_pool, pool_id)
                 else:
-                    LOG.warning(_LW("The pool {0} doesn't exist. Ignoring the "
-                                    "deletion of the pool.")
-                                .format(vip_id))
+                    LOG.warning(_LW("The pool %s doesn't exist. Ignoring the "
+                                    "deletion of the pool."), vip_id)
             except n_exceptions.NeutronClientException as ex:
                 with excutils.save_and_reraise_exception():
                     LOG.error(_LE("Error happened during deleting a"
-                                  " Neutron pool: {0}").format(ex))
-            LOG.debug('Successfully deleted the Neutron pool {0}'
-                      .format(neutron_pool))
+                                  " Neutron pool: %s"), ex)
+            LOG.debug('Successfully deleted the Neutron pool %s', neutron_pool)
 
 
 class K8sEndpointsWatcher(K8sAPIWatcher):
@@ -894,9 +889,9 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
                 backoff_time = backoff_unit * random.randint(
                     0, (2 ** retries) - 1)
                 wait_time = min(backoff_time, constants.MAX_WAIT_INTERVAL)
-                LOG.debug('The service is not translated yet. Retried {0} '
-                          'times and the next interval is {1:.2f} seconds.'
-                          .format(retries, wait_time))
+                LOG.debug('The service is not translated yet. Retried %s '
+                          'times and the next interval is %.2f seconds.',
+                          retries, wait_time)
                 yield from self.wait_for(wait_time)
 
         if retries >= constants.MAX_RETRIES:
