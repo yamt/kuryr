@@ -13,8 +13,8 @@ RUN apk add --no-cache \
     pip3 --no-cache-dir install --upgrade pip setuptools && \
     git clone https://github.com/midonet/kuryr.git -b k8s && \
     cd kuryr && \
-    pip3 --no-cache-dir install -r requirements.txt && \
-    python3 setup.py install && \
+    pip3 --no-cache-dir install --upgrade pip setuptools && \
+    pip3 install . && \
     cd / && \
     rm -fr /raven && \
     apk del build-deps && \
