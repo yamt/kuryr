@@ -23,7 +23,6 @@ import netaddr
 import requests
 
 from oslo_concurrency import processutils
-from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 from oslo_utils import excutils
@@ -32,11 +31,12 @@ from kuryr._i18n import _LE
 from kuryr import binding
 from kuryr.cni import constants as cni_consts
 from kuryr.cni import models
+from kuryr.common import config
 from kuryr.common import constants
 from kuryr.common import exceptions
 
 
-CONF = cfg.CONF
+config.init(args=None)
 LOG = logging.getLogger(__name__)
 
 
@@ -105,7 +105,7 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
 
     def _get_pod_annotaions(self):
         k8s_url = "%s/api/v1/namespaces/%s/pods/%s" % (
-            CONF.k8s.api_root,
+            config.CONF.k8s.api_root,
             self.pod_namespace,
             self.pod_name)
         LOG.debug('URL of the pod %s', k8s_url)
