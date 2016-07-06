@@ -1,0 +1,129 @@
+#cloud-config
+
+---
+write-files:
+  - path: /etc/conf.d/demo
+    permissions: '0644'
+    content: |
+      K8S_CONTROLLER_IP="10.142.0.3"
+      OST_CONTROLLER_IP="10.142.0.2"
+      UUID="80870762-6bee-4146-bfd8-fb5ae3f5477a"
+  - path: /opt/bin/wupiao
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # [w]ait [u]ntil [p]ort [i]s [a]ctually [o]pen
+      [ -n "$1" ] && \
+          until curl -o /dev/null -sIf http://${1}; do \
+          sleep 1 && echo .;
+        done;
+      exit $?
+coreos:
+  fleet:
+    metadata: "role=worker"
+  units:
+    - name: google-accounts-manager.service
+      command: start
+    - name: etcd3.service
+      command: start
+      content: |
+        [Unit]
+        Description=Etcd3
+        Documentation=https://github.com/coreos/etcd
+        Requires=docker.service
+        After=docker.service
+
+        [Service]
+        ExecStartPre=-/usr/bin/docker kill %n
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStartPre=/usr/bin/docker pull quay.io/coreos/etcd:v3.0.1
+        ExecStart=/usr/bin/docker run --name %n \
+          --net host \
+          --volume=/var/etcd:/var/etcd \
+          quay.io/coreos/etcd:v3.0.1 \
+          /usr/local/bin/etcd \
+            --name k8s-worker2 \
+            --data-dir /var/etcd/data \
+            --initial-advertise-peer-urls http://$private_ipv4:2380 \
+            --listen-peer-urls http://0.0.0.0:2380 \
+            --listen-client-urls http://0.0.0.0:2379 \
+            --advertise-client-urls http://$private_ipv4:2379 \
+            --initial-cluster-token etcd-cluster-1 \
+            --initial-cluster k8s-controller=http://10.142.0.3:2380,k8s-worker1=http://10.142.0.4:2380,k8s-worker2=http://$private_ipv4:2380 \
+            --initial-cluster-state new
+        ExecStop=/usr/bin/docker kill %n
+        ExecStopPost=/usr/bin/docker rm -f %n
+        Restart=always
+        RestartSec=10
+    - name: fleet.service
+      command: start
+    - name: docker.service
+      command: start
+    - name: midonet-prepare-ovs.service
+      command: start
+      content: |
+        [Unit]
+        Description=Modprobes ovs
+        Documentation=https://docs.midonet.org/docs/latest/operations-guide/content/_configuration_sources.html
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/sbin/modprobe openvswitch
+    - name: midonet-agent.service
+      command: start
+      content: |
+        [Unit]
+        Description=MidoNet Agent
+        Documentation=https://docs.midonet.org/docs/latest/operations-guide/content/_configuration_sources.html
+        Requires=docker.service
+        After=docker.service midonet-prepare-ovs.service
+
+        [Service]
+        Restart=always
+        EnvironmentFile=/etc/conf.d/demo
+        ExecStartPre=-/usr/bin/docker kill %n
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStartPre=/usr/bin/docker pull midonet/agent
+        ExecStart=/usr/bin/docker run --name %n --net=host \
+          --cap-add=NET_ADMIN \
+          -e ZK_ENDPOINTS=${OST_CONTROLLER_IP}:2181 \
+          -e UUID=${UUID} \
+          --volume=/var/log/midolman:/var/log/midolman \
+          midonet/agent
+        ExecStop=/usr/bin/docker kill %n
+        ExecStopPost=/usr/bin/docker rm -f %n
+        Restart=always
+        RestartSec=3
+    - name: kubelet.service
+      command: start
+      content: |
+        [Unit]
+        Description=Kubernetes kubelet with kuryr CNI driver
+        Documentation=https://github.com/midonet/midonet-docker
+        Requires=docker.service
+        After=docker.service
+
+        [Service]
+        EnvironmentFile=/etc/conf.d/demo
+        ExecStartPre=/usr/bin/docker pull midonet/kubelet
+        ExecStartPre=/opt/bin/wupiao ${K8S_CONTROLLER_IP}:8080
+        ExecStartPre=-/usr/bin/docker kill %n
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStart=/usr/bin/docker run --name %n \
+          -e MASTER_IP=${K8S_CONTROLLER_IP} \
+          -e ZK_ENDPOINTS=${OST_CONTROLLER_IP}:2181 \
+          -e UUID="${UUID}" \
+          --volume=/:/rootfs:ro \
+          --volume=/sys:/sys:ro \
+          --volume=/var/lib/docker/:/var/lib/docker:rw \
+          --volume=/var/lib/kubelet/:/var/lib/kubelet:rw \
+          --volume=/var/run:/var/run:rw \
+          --volume=/var/log/kuryr:/var/log/kuryr \
+          --net=host \
+          --privileged=true \
+          --pid=host \
+          midonet/kubelet
+        ExecStop=/usr/bin/docker kill %n
+        ExecStopPost=/usr/bin/docker rm -f %n
+        Restart=always
+        RestartSec=3
