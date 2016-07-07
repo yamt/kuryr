@@ -28,6 +28,7 @@ import requests
 from kuryr._i18n import _LE
 from kuryr._i18n import _LI
 from kuryr.common import config
+from kuryr.common import constants
 from kuryr import controllers
 from kuryr.raven.aio import headers
 from kuryr.raven.aio import methods
@@ -38,7 +39,6 @@ from kuryr import utils
 LOG = log.getLogger(__name__)
 
 HARDCODED_NET_NAME = 'raven-default'
-HARDCODED_SG_NAME = 'raven-default-sg'
 DEFAULT_PREFIX_LEN = 24
 
 
@@ -161,13 +161,15 @@ class Raven(service.Service):
 
     def _create_default_security_group(self):
         sgs = controllers._get_security_groups_by_attrs(
-            unique=False, name=HARDCODED_SG_NAME)
+            unique=False,
+            name=constants.K8S_HARDCODED_SG_NAME)
         if sgs:
             sg = sgs[0]
             LOG.debug('Reusing the existing SG {0}'.format(sg))
         else:
             sg_response = self.neutron.create_security_group(
-                {'security_group': {'name': HARDCODED_SG_NAME}})
+                {'security_group':
+                    {'name': constants.K8S_HARDCODED_SG_NAME}})
             sg = sg_response['security_group']
             # Create ingress rules similarly to Neutron Default SG
             for ethertype in ['IPv4', 'IPv6']:
