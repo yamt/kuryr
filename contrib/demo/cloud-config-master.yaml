@@ -199,6 +199,7 @@ coreos:
         After=kube-apiserver.service docker.service
 
         [Service]
+        ExecStartPre=/opt/bin/wupiao 127.0.0.1:8080`
         ExecStartPre=-/usr/bin/docker kill %n
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStartPre=/usr/bin/docker pull gcr.io/google_containers/hyperkube-amd64:v1.3.0
@@ -226,6 +227,7 @@ coreos:
         After=kube-apiserver.service docker.service
 
         [Service]
+        ExecStartPre=/opt/bin/wupiao 127.0.0.1:8080`
         ExecStartPre=-/usr/bin/docker kill %n
         ExecStartPre=-/usr/bin/docker rm %n
         ExecStartPre=/usr/bin/docker pull gcr.io/google_containers/hyperkube-amd64:v1.3.0
