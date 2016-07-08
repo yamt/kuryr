@@ -13,6 +13,7 @@
 
 import abc
 import asyncio
+import ipaddress
 
 from neutronclient.common import exceptions as n_exceptions
 from oslo_log import log
@@ -698,6 +699,33 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 annotations.update(
                     {constants.K8S_ANNOTATION_VIP_KEY: jsonutils.dumps(vip)})
 
+                # add security group rule in the default security group to
+                # allow access from the VIP to all containers
+                sgs = self.neutron.list_security_groups(
+                    name=constants.K8S_HARDCODED_SG_NAME)
+                if sgs:
+                    sg = sgs['security_groups'][0]
+                else:
+                    raise Exception('Security group should be already created'
+                                    ' at this point')
+
+                if ipaddress.ip_address(cluster_ip).version == 4:
+                    ip_version = 'IPv4'
+                else:
+                    ip_version = 'IPv6'
+
+                rule = {
+                    'security_group_id': sg['id'],
+                    'ethertype': ip_version,
+                    'direction': 'ingress',
+                    'remote_ip_prefix': '%s/32' % cluster_ip,
+                }
+                req = {
+                    'security_group_rule': rule,
+                }
+                LOG.debug('Creating SG rule %s', req)
+                self.neutron.create_security_group_rule(req)
+
                 if path:
                     yield from _update_annotation(
                         self.delegate, path, 'Service', annotations)
@@ -719,6 +747,25 @@ class K8sServicesWatcher(K8sAPIWatcher):
                     LOG.debug('Deletion event without neutron VIP information.'
                               ' Ignoring it.')
                     return
+
+                # delete security group rule in the default security group for
+                # the VIP we have just deleted
+                sgs = self.neutron.list_security_groups(
+                    name=constants.K8S_HARDCODED_SG_NAME)
+                if sgs:
+                    sg = sgs['security_groups'][0]
+                else:
+                    raise Exception('Security group should be already created'
+                                    ' at this point')
+
+                vip_address = '%s/32' % neutron_vip['address']
+
+                sgrs = self.neutron.list_security_group_rules(
+                    security_group_id=sg['id'],
+                    remote_ip_prefix=vip_address)
+                if sgrs:
+                    sgr = sgrs['security_group_rules'][0]
+                    self.neutron.delete_security_group_rule(sgr['id'])
 
                 # VIP should be delete before the pool.
                 try:

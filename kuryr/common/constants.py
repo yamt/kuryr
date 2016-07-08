@@ -46,6 +46,8 @@ K8S_DEFAULT_NAMESPACE = 'default'
 # this purpose?  Do we want to allow users to specify multiple SGs?
 K8S_LABEL_SECURITY_GROUP_KEY = 'kuryr.org/neutron-security-group'
 
+K8S_HARDCODED_SG_NAME = 'raven-default-sg'
+
 MAX_RETRIES = config.CONF.raven.max_retries
 MAX_WAIT_INTERVAL = config.CONF.raven.max_wait_interval
 BACKOFF_UNIT = 0.2

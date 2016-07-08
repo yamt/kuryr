@@ -23,6 +23,7 @@ import ddt
 from oslo_service import service
 
 from kuryr.common import config
+from kuryr.common import constants
 from kuryr.raven import raven
 from kuryr.tests.unit import base
 from kuryr import utils
@@ -208,11 +209,12 @@ class TestRaven(base.TestKuryrBase):
         self.mox.StubOutWithMock(r.neutron, 'create_security_group')
         self.mox.StubOutWithMock(r.neutron, 'create_security_group_rule')
         raven.controllers._get_security_groups_by_attrs(
-            unique=False, name=raven.HARDCODED_SG_NAME).AndReturn([])
+            unique=False, name=constants.K8S_HARDCODED_SG_NAME).AndReturn([])
         sg_id = str(uuid.uuid4())
         r.neutron.create_security_group(
-            {'security_group': {'name': raven.HARDCODED_SG_NAME}}).AndReturn(
-            {'security_group': {'id': sg_id}})
+            {'security_group':
+                {'name': constants.K8S_HARDCODED_SG_NAME}}).AndReturn(
+                    {'security_group': {'id': sg_id}})
         for ethertype in ['IPv4', 'IPv6']:
             r.neutron.create_security_group_rule(
                 {'security_group_rule': {
@@ -456,9 +458,9 @@ class TestRaven(base.TestKuryrBase):
                                  '_get_security_groups_by_attrs')
         sg_id = str(uuid.uuid4())
         raven.controllers._get_security_groups_by_attrs(
-            unique=False, name=raven.HARDCODED_SG_NAME).AndReturn([{
+            unique=False, name=constants.K8S_HARDCODED_SG_NAME).AndReturn([{
                 'id': sg_id,
-                'name': raven.HARDCODED_SG_NAME}])
+                'name': constants.K8S_HARDCODED_SG_NAME}])
 
         # Mock the service router call by returning an existing one
         self.mox.StubOutWithMock(raven.controllers, '_get_routers_by_attrs')
