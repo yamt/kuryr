@@ -3,10 +3,14 @@
 ---
 write-files:
   - path: /etc/conf.d/demo
+    # Used for pointing to the OpenStack controller. It could be used as well
+    # for pointing to NSDB controllers if they were separated and/or multiple.
     permissions: '0644'
     content: |
       OST_CONTROLLER_IP="10.142.0.2"
   - path: /etc/conf.d/kubectl
+    # Configuration for users of kubectl so that it points to the Kubernetes
+    # API server that is served by this instance.
     permissions: '0644'
     content: |
       apiVersion: v1
@@ -24,6 +28,8 @@ write-files:
       preferences: {}
       users: []
   - path: /opt/bin/wupiao
+    # Small bash utility that allows us to wait for an HTTP service to be
+    # responsive before resuming operations.
     permissions: '0755'
     content: |
       #!/bin/bash
@@ -34,6 +40,9 @@ write-files:
         done;
       exit $?
   - path: /opt/bin/kubectl
+    # Wrapper around Kubernetes' kubectl command line tool. It will download
+    # the tool and set the right configuration for the caller to target the
+    # Kubernetes API server that is served by this instance.
     permissions: '0755'
     content: |
       #!/bin/bash
@@ -54,8 +63,8 @@ write-files:
       #!/bin/sh
       #
       # Adapter for using midonet-cli from midonet/utils
-      #
-      # Use the IP of the ost-controller
+
+      # Source the demo config for getting the IP of the ost-controller
       source /etc/conf.d/demo
 
       docker run --rm \
@@ -64,11 +73,13 @@ write-files:
         midonet/utils cli "$@"
 coreos:
   fleet:
-    metadata: "role=master"
+    metadata: "role=master"  # In case the user wants to fleet schedule things
   units:
-    - name: google-accounts-manager.service
+    - name: google-accounts-manager.service  # Necessary only for SSH in GCE
       command: start
     - name: demo-prepare-cli-tools.service
+      # Service to pull the latest version of midonet/utils so that the user
+      # does not need to wait the first time they want to use midonet-cli.
       command: start
       content: |
         [Unit]
@@ -80,6 +91,12 @@ coreos:
         Type=oneshot
         ExecStart=/usr/bin/docker pull midonet/utils
     - name: etcd3.service
+      # Sets up an Etcd 3 cluster composed of k8s-controller, k8s-worker1 and
+      # k8s-worker2. Other workers would not need to be added to the cluster if
+      # the operator is fine with the HA provided by a 3 node Etcd cluster.
+      # The discovery is static specifying the members in 'initial-cluster'.
+      # If you want to use DNS or token discovery, refer to:
+      # https://coreos.com/etcd/docs/latest/clustering.html
       command: start
       content: |
         [Unit]
@@ -118,7 +135,9 @@ coreos:
       command: start
       content: |
         [Unit]
-        Description=Kubernetes setup config files
+        Description=Hyperkube Kubernetes facility that sets up the base \
+           configuration needed by the Kubernetes API Server and the \
+           Kubernetes Controller Manager
         Documentation=https://github.com/kubernetes/kubernetes
         Requires=docker.service
         After=docker.service
@@ -224,7 +243,8 @@ coreos:
       command: start
       content: |
         [Unit]
-        Description=Kuryr Kubernetes API watcher
+        Description=Kuryr Kubernetes API watcher and translator of events to \
+          Neutron entities.
         Documentation=https://github.com/midonet/kuryr/tree/k8s
         Requires=kube-apiserver.service docker.service
         After=kube-apiserver.service docker.service
@@ -243,7 +263,7 @@ coreos:
           -e OS_URL=http://${OST_CONTROLLER_IP}:9696 \
           -e K8S_API=http://$private_ipv4:8080 \
           -v /var/log/kuryr:/var/log/kuryr \
-         midonet/raven
+          midonet/raven
         ExecStop=/usr/bin/docker kill %n
         ExecStopPost=/usr/bin/docker rm -f %n
         Restart=always

@@ -3,12 +3,19 @@
 ---
 write-files:
   - path: /etc/conf.d/demo
+    # Used for pointing to the OpenStack and Kubernetes controllers. It could
+    # be used as well for pointing to NSDB controllers if they were separated
+    # and/or multiple. It is very important that if you make additional workers
+    # you change the UUID, as it is the identifier used by the MidoNet agent to
+    # identify specific hosts.
     permissions: '0644'
     content: |
       K8S_CONTROLLER_IP="10.142.0.3"
       OST_CONTROLLER_IP="10.142.0.2"
       UUID="2a3b9405-818a-496b-bf75-9a53c9c45b0e"
   - path: /opt/bin/wupiao
+    # Small bash utility that allows us to wait for an HTTP service to be
+    # responsive before resuming operations.
     permissions: '0755'
     content: |
       #!/bin/bash
@@ -25,6 +32,12 @@ coreos:
     - name: google-accounts-manager.service
       command: start
     - name: etcd3.service
+      # Sets up an Etcd 3 cluster composed of k8s-controller, k8s-worker1 and
+      # k8s-worker2. Other workers would not need to be added to the cluster if
+      # the operator is fine with the HA provided by a 3 node Etcd cluster.
+      # The discovery is static specifying the members in 'initial-cluster'.
+      # If you want to use DNS or token discovery, refer to:
+      # https://coreos.com/etcd/docs/latest/clustering.html
       command: start
       content: |
         [Unit]
@@ -63,7 +76,8 @@ coreos:
       command: start
       content: |
         [Unit]
-        Description=Modprobes ovs
+        Description=Modprobes the openvswitch Linux Kernel module so that the \
+          MidoNet agent can operate with just the NET_ADMIN capability
         Documentation=https://docs.midonet.org/docs/latest/operations-guide/content/_configuration_sources.html
 
         [Service]
@@ -98,7 +112,8 @@ coreos:
       command: start
       content: |
         [Unit]
-        Description=Kubernetes kubelet with kuryr CNI driver
+        Description=Kubernetes kubelet with kuryr CNI driver and MidoNet \
+          port binding tool
         Documentation=https://github.com/midonet/midonet-docker
         Requires=docker.service
         After=docker.service
