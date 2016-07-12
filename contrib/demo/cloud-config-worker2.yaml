@@ -102,7 +102,8 @@ coreos:
           --cap-add=NET_ADMIN \
           -e ZK_ENDPOINTS=${OST_CONTROLLER_IP}:2181 \
           -e UUID=${UUID} \
-          --volume=/var/log/midolman:/var/log/midolman \
+          --volume=/var/log/midolman:/var/log/midolman:rw \
+          --volume=/var/run:/var/run:rw \
           midonet/agent
         ExecStop=/usr/bin/docker kill %n
         ExecStopPost=/usr/bin/docker rm -f %n
