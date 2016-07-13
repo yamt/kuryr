@@ -8,5 +8,5 @@ import sys
 try:
     print(run_driver())
 except Exception as e:
-    print(e.message)
+    print('CNI aborted due to exception: {}'.format(e))
     sys.exit(3)
