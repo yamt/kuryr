@@ -1,12 +1,36 @@
+rabbitmq:
+  image: rabbitmq:3
+  net: host
+  hostname: rabbitmq
+
+neutron:
+  extends:
+    file: $BASE/neutron.yml
+    service: neutron
+  image: sandbox/neutron:liberty
+  hostname: neutron
+  links:
+  - "keystone:keystone"
+  - "cluster:midonetapi"
+
+lbaasagent:
+  image: sandbox/neutron-lbaas:liberty
+  hostname: neutron-lbaas
+  net: host
+  privileged: true
+  volumes_from:
+  - midolman
+
 midolman:
   extends:
     file: $BASE/midolman.yml
     service: midolman
-  image: sandbox/midolman:v5.0
+  image: sandbox/midolman:master
   net: host
   volumes:
   - /var/log/sandbox/midolman:/var/log/midolman
   - /etc/sandbox
+  - /var/run/midolman
   command: ['/run-midolman-host.sh']
   volumes_from:
   - zookeeper1
@@ -56,7 +80,7 @@ cluster:
   extends:
     file: $BASE/midonet-cluster.yml
     service: cluster
-  image: sandbox/midonet-cluster:v5.0
+  image: sandbox/midonet-cluster:master
   hostname: cluster
   links:
   - "zookeeper1:zk1"
@@ -74,20 +98,3 @@ keystone:
   hostname: keystone
   volumes:
   - /var/log/sandbox/keystone:/var/log/keystone
-
-mariadb:
-  image: mariadb:5.5
-  hostname: mariadb
-  environment:
-  - MYSQL_ROOT_PASSWORD=root
-
-neutron:
-  extends:
-    file: $BASE/neutron.yml
-    service: neutron
-  image: sandbox/neutron:liberty
-  hostname: neutron
-  links:
-  - "keystone:keystone"
-  - "cluster:midonetapi"
-  - "mariadb:mariadb"

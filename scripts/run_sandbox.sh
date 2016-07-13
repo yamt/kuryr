@@ -28,7 +28,7 @@ if [[ "$1" == "start" ]]; then
     sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg run --name=k8s --provision=/tmp/kuryr_dev/sandbox/keystone-provisioning.sh $SANDBOX_VERSION
 
     if [[ "$SANDBOX_VERSION" == "dev" ]]; then
-        docker run -d --net=host --pid=host --privileged -e "K8S_API=http://172.17.0.1:8080" --name=mnsandboxk8s_kubelet_1 -v $kuryr_path/kuryr:/usr/local/lib/python3.4/dist-packages/kuryr -v /etc/midolman -v /:/rootfs:ro -v /sys:/sys:ro -v /var/lib/docker:/var/lib/docker:rw -v /var/lib/kubelet:/var/lib/kubelet:rw -v /var/run:/var/run:rw --volumes-from mnsandboxk8s_zookeeper1_1 --volumes-from mnsandboxk8s_midolman_1 sandbox/kubernetes:1.2.0 /run_kubernetes.sh
+        docker run -d --net=host --pid=host --privileged -e "K8S_API=http://172.17.0.1:8080" --name=mnsandboxk8s_kubelet_1 -v $kuryr_path/kuryr:/usr/local/lib/python3.4/dist-packages/kuryr -v $kuryr_path/usr:/usr/local/lib/python3.4/dist-packages/usr -v /etc/midolman -v /:/rootfs:ro -v /sys:/sys:ro -v /var/lib/docker:/var/lib/docker:rw -v /var/lib/kubelet:/var/lib/kubelet:rw -v /var/run:/var/run:rw --volumes-from mnsandboxk8s_zookeeper1_1 --volumes-from mnsandboxk8s_midolman_1 sandbox/kubernetes:1.2.0 /run_kubernetes.sh
     fi
 
     echo ""

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env python
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -11,29 +11,81 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-bind_port() {
-    echo "Binding Neutron port $1 to the veth $2..."
-    mm-ctl --bind-port $1 $2
-}
+try:
+    import httplib
+except ImportError:
+    import http.client as httplib
+import json
+import socket
+import sys
 
-unbind_port() {
-    echo "Unbinding Neutron port $1..."
-    mm-ctl --unbind-port $1
-}
 
-case $1 in
-    "bind")
-        shift
-        bind_port "$@"
-        exit 0
-        ;;
-    "unbind")
-        shift
-        unbind_port "$@"
-        exit 0
-        ;;
-    *)
-        echo >&2 "$0: Invalid command $1."
-        exit 1
-        ;;
-esac
+class UnixDomainHTTPConnection(httplib.HTTPConnection):
+    def __init__(self, path):
+        httplib.HTTPConnection.__init__(self, "dummy-host")
+        self.__unix_socket_path = path
+
+    def connect(self):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(self.__unix_socket_path)
+        # NOTE(yamamoto): self.sock is not a part of public API.
+        # I guess this is portable enough as it's what Neutron does.
+        self.sock = sock
+
+
+class HTTPError(RuntimeError):
+    def __init__(self, **kwargs):
+        self._kwargs = kwargs
+
+    def __str__(self):
+        return "HTTPError %s" % self._kwargs
+
+
+def connect():
+    # REVISIT(yamamoto): make the path configurable?
+    socket_path = '/var/run/midolman/midolman.sock'
+    return UnixDomainHTTPConnection(socket_path)
+
+
+def consume_response(conn):
+    res = conn.getresponse()
+    if not 200 <= res.status < 300:
+        raise HTTPError(status=res.status, reason=res.reason, msg=str(res.msg))
+    res.read()
+
+
+def bind_port(port_id, interface_name):
+    conn = connect()
+    body = json.dumps({
+        'interfaceName': interface_name,
+    })
+    headers = {
+        'Content-Type': 'application/json',
+    }
+    conn.request('PUT', 'http://dummy/binding/%s' % port_id,
+                 body=body, headers=headers)
+    consume_response(conn)
+
+
+def unbind_port(port_id):
+    conn = connect()
+    conn.request('DELETE', 'http://dummy/binding/%s' % port_id)
+    consume_response(conn)
+
+
+def main():
+    try:
+        if len(sys.argv) >= 4 and sys.argv[1] == 'bind':
+            bind_port(sys.argv[2], sys.argv[3])
+        elif len(sys.argv) >= 3 and sys.argv[1] == 'unbind':
+            unbind_port(sys.argv[2])
+        else:
+            sys.stderr.write('Invalid command {}'.format(sys.argv))
+            sys.exit(1)
+    except HTTPError as e:
+        sys.stderr.write(str(e))
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
