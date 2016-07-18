@@ -1,0 +1,158 @@
+#cloud-config
+
+---
+
+write-files:
+  - path: /etc/hostname
+    #set the hostname
+    permissions: '0644'
+    content: |
+      k8s-worker1.novalocal
+  - path: /etc/hosts
+    #set the hostname
+    permissions: '0644'
+    content: |
+      10.142.0.3   k8s-controller.novalocal
+      10.142.0.4   k8s-worker1.novalocal
+      10.142.0.5   k8s-worker2.novalocal
+  - path: /etc/conf.d/demo
+    # Used for pointing to the OpenStack and Kubernetes controllers. It could
+    # be used as well for pointing to NSDB controllers if they were separated
+    # and/or multiple. It is very important that if you make additional workers
+    # you change the UUID, as it is the identifier used by the MidoNet agent to
+    # identify specific hosts.
+    permissions: '0644'
+    content: |
+      K8S_CONTROLLER_IP="10.142.0.3"
+      OST_CONTROLLER_IP="10.142.0.2"
+      UUID="2a3b9405-818a-496b-bf75-9a53c9c45b0e"
+  - path: /opt/bin/wupiao
+    # Small bash utility that allows us to wait for an HTTP service to be
+    # responsive before resuming operations.
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # [w]ait [u]ntil [p]ort [i]s [a]ctually [o]pen
+      [ -n "$1" ] && \
+          until curl -o /dev/null -sIf http://${1}; do \
+          sleep 1 && echo .;
+        done;
+      exit $?
+coreos:
+  fleet:
+    metadata: "role=worker"
+  units:
+#    - name: google-accounts-manager.service
+#      command: start
+    - name: etcd3.service
+      # Sets up an Etcd 3 cluster composed of k8s-controller, k8s-worker1 and
+      # k8s-worker2. Other workers would not need to be added to the cluster if
+      # the operator is fine with the HA provided by a 3 node Etcd cluster.
+      # The discovery is static specifying the members in 'initial-cluster'.
+      # If you want to use DNS or token discovery, refer to:
+      # https://coreos.com/etcd/docs/latest/clustering.html
+      command: start
+      content: |
+        [Unit]
+        Description=Etcd3
+        Documentation=https://github.com/coreos/etcd
+        Requires=docker.service
+        After=docker.service
+
+        [Service]
+        ExecStartPre=-/usr/bin/docker kill %n
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStartPre=/usr/bin/docker pull quay.io/coreos/etcd:v3.0.1
+        ExecStart=/usr/bin/docker run --name %n \
+          --net host \
+          --volume=/var/etcd:/var/etcd \
+          quay.io/coreos/etcd:v3.0.1 \
+          /usr/local/bin/etcd \
+            --name k8s-worker1 \
+            --data-dir /var/etcd/data \
+            --initial-advertise-peer-urls http://$private_ipv4:2380 \
+            --listen-peer-urls http://0.0.0.0:2380 \
+            --listen-client-urls http://0.0.0.0:2379 \
+            --advertise-client-urls http://$private_ipv4:2379 \
+            --initial-cluster-token etcd-cluster-1 \
+            --initial-cluster k8s-controller=http://10.142.0.3:2380,k8s-worker1=http://$private_ipv4:2380,k8s-worker2=http://10.142.0.5:2380 \
+            --initial-cluster-state new
+        ExecStop=/usr/bin/docker kill %n
+        ExecStopPost=/usr/bin/docker rm -f %n
+        Restart=always
+        RestartSec=10
+    - name: fleet.service
+      command: start
+    - name: docker.service
+      command: start
+    - name: midonet-prepare-ovs.service
+      command: start
+      content: |
+        [Unit]
+        Description=Modprobes the openvswitch Linux Kernel module so that the \
+          MidoNet agent can operate with just the NET_ADMIN capability
+        Documentation=https://docs.midonet.org/docs/latest/operations-guide/content/_configuration_sources.html
+
+        [Service]
+        Type=oneshot
+        ExecStart=/usr/sbin/modprobe openvswitch
+    - name: midonet-agent.service
+      command: start
+      content: |
+        [Unit]
+        Description=MidoNet Agent
+        Documentation=https://docs.midonet.org/docs/latest/operations-guide/content/_configuration_sources.html
+        Requires=docker.service
+        After=docker.service midonet-prepare-ovs.service
+
+        [Service]
+        Restart=always
+        EnvironmentFile=/etc/conf.d/demo
+        ExecStartPre=-/usr/bin/docker kill %n
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStartPre=/usr/bin/docker pull midonet/agent
+        ExecStart=/usr/bin/docker run --name %n --net=host \
+          --cap-add=NET_ADMIN \
+          -e ZK_ENDPOINTS=${OST_CONTROLLER_IP}:2181 \
+          -e UUID=${UUID} \
+          --volume=/var/log/midolman:/var/log/midolman:rw \
+          --volume=/var/run:/var/run:rw \
+          midonet/agent
+        ExecStop=/usr/bin/docker kill %n
+        ExecStopPost=/usr/bin/docker rm -f %n
+        Restart=always
+        RestartSec=3
+    - name: kubelet.service
+      command: start
+      content: |
+        [Unit]
+        Description=Kubernetes kubelet with kuryr CNI driver and MidoNet \
+          port binding tool
+        Documentation=https://github.com/midonet/midonet-docker
+        Requires=docker.service
+        After=docker.service
+
+        [Service]
+        EnvironmentFile=/etc/conf.d/demo
+        ExecStartPre=/usr/bin/docker pull midonet/kubelet
+        ExecStartPre=/opt/bin/wupiao ${K8S_CONTROLLER_IP}:8080
+        ExecStartPre=-/usr/bin/docker kill %n
+        ExecStartPre=-/usr/bin/docker rm %n
+        ExecStart=/usr/bin/docker run --name %n \
+          -e MASTER_IP=${K8S_CONTROLLER_IP} \
+          -e ZK_ENDPOINTS=${OST_CONTROLLER_IP}:2181 \
+          -e UUID="${UUID}" \
+          --volume=/:/rootfs:ro \
+          --volume=/sys:/sys:ro \
+          --volume=/var/lib/docker/:/var/lib/docker:rw \
+          --volume=/var/lib/kubelet/:/var/lib/kubelet:rw \
+          --volume=/var/run:/var/run:rw \
+          --volume=/var/log/kuryr:/var/log/kuryr \
+          --net=host \
+          --privileged=true \
+          --pid=host \
+          midonet/kubelet
+        ExecStop=/usr/bin/docker kill %n
+        ExecStopPost=/usr/bin/docker rm -f %n
+        Restart=always
+        RestartSec=3
