@@ -19,9 +19,11 @@ if [[ "$1" == "start" ]]; then
     # echo "Pulling all the needed images"
     if [[ ${SANDBOX_PULL} == "true" ]]; then
         sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg pull-all k8s+5+liberty
+        sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg pull-all $SANDBOX_VERSION
     else 
         # Build the images
         sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg build-all k8s+5+liberty
+        sandbox-manage -c /tmp/kuryr_dev/sandbox/sandbox_kuryr.cfg build-all $SANDBOX_VERSION
     fi
 
     echo "Running the development version"
