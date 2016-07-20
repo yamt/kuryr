@@ -12,8 +12,9 @@
 
 from tempfile import NamedTemporaryFile
 
-import pykube
+from kuryr.common import constants
 
+import pykube
 import time
 import yaml
 
@@ -138,6 +139,106 @@ class K8sTestClient(object):
         self._wait_until_created(ns, label='kuryr.org/neutron-network')
         return ns
 
+    def create_deployment(self,
+                          num_replicas='3',
+                          name='test-deployment',
+                          image='nginx',
+                          port='80',
+                          namespace='default',
+                          labels=None):
+        """Create a deployment. """
+        if not labels:
+            labels = []
+        labels['environment'] = 'test'
+        obj = {
+            # 'apiVersion': 'extensions/v1beta1',
+            # 'kind': 'Deployment',
+            'metadata': {
+                'name': name,
+                'labels': labels
+            },
+            'spec': {
+                'replicas': num_replicas,
+                'template': {
+                    'metadata': {
+                        'labels': labels
+                    },
+                    'spec': {
+                        'containers': [{
+                            'name': name + '-container',
+                            'image': image,
+                            'ports': [{'containerPort': port}]
+                        }]
+                    }
+                }
+            }
+        }
+        dp = pykube.Deployment(self.api, obj)
+        dp.create()
+
+        query = pykube.Pod.objects(self.api).filter(
+            selector=labels)
+
+        # Deployment has been created. Now we have to wait until all the
+        # pods have been created
+        for pod in query.all():
+            self._wait_until_created(pod, label='kuryr.org/neutron-port')
+
+        return dp
+
+    def create_service(self,
+                       deployment,
+                       name='test-service',
+                       service_port=80):
+
+        labels = deployment.obj['metadata']['labels']
+        rpcs = deployment.obj['spec']['replicas']
+        obj = {
+            'metadata': {
+                'name': name,
+                'labels': labels
+            },
+            'spec': {
+                'ports': [
+                    {'port': service_port}
+                ],
+                'selector': labels
+            }
+        }
+        service = pykube.Service(self.api, obj)
+        service.create()
+
+        self._wait_until_created(service,
+                                 label=constants.K8S_ANNOTATION_VIP_KEY)
+
+        query_endpoint = pykube.Endpoint.objects(self.api).filter(
+            selector={'environment__in': {'test'}})
+
+        # Wait for the endpoints of the service to be created
+        attempts_endpoint = 0
+        max_attempts_endpoint = 10
+        found = False
+        for endpoint in query_endpoint:
+            if endpoint.obj['metadata']['name'] == name:
+                found = True
+                while ((not endpoint.obj['subsets'] or
+                        len(endpoint.obj['subsets'][0]['addresses']) != rpcs)
+                       and attempts_endpoint < max_attempts_endpoint):
+                    attempts_endpoint += 1
+                    time.sleep(3)
+                    endpoint.reload()
+                if attempts_endpoint > max_attempts_endpoint:
+                    raise Exception("Endpoint %(name)s took too much time "
+                                    "to be created." %
+                                    {'name': endpoint.name})
+                else:
+                    break
+
+        if not found:
+            raise Exception("Endpoints not created for service %s", name)
+
+        return service
+
     def delete_obj(self, obj, max_attempts=120):
 
         try:
@@ -163,10 +264,34 @@ class K8sTestClient(object):
         """Delete all pods created."""
         query_ns = pykube.Namespace.objects(self.api).all()
         for ns in query_ns:
-            query = pykube.Pod.objects(self.api).filter(
+
+            # Remove services
+            query_service = pykube.Service.objects(self.api).filter(
                 namespace=ns.name,
                 selector={'environment__in': {'test'}})
-            for pod in query:
+            for service in query_service:
+                self.delete_obj(service)
+
+            # Remove deployments
+            query_deployment = pykube.Deployment.objects(self.api).filter(
+                namespace=ns.name,
+                selector={'environment__in': {'test'}})
+            for deployment in query_deployment:
+                self.delete_obj(deployment)
+
+            # Remove replica sets
+            query_rs = pykube.ReplicaSet.objects(self.api).filter(
+                namespace=ns.name,
+                selector={'environment__in': {'test'}})
+            for rs in query_rs:
+                self.delete_obj(rs)
+
+            # Remove Pods
+            query_pod = pykube.Pod.objects(self.api).filter(
+                namespace=ns.name,
+                selector={'environment__in': {'test'}})
+            for pod in query_pod:
                 self.delete_obj(pod)
+
             if ns.name != 'default':
                 self.delete_obj(ns)

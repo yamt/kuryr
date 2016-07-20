@@ -122,6 +122,31 @@ class K8sBaseTest(base.BaseTestCase):
         self.assertIn('0% packet loss', str(resp),
                       'Containers communication not working')
 
+    def assertNeutronLoadBalancer(self, service, num_members):
+        self.assertIn('annotations', service.obj['metadata'])
+        annotations = service.obj['metadata']['annotations']
+        self.assertIn(constants.K8S_ANNOTATION_VIP_KEY,
+                      annotations)
+        vip_annotation = jsonutils.loads(
+            annotations[constants.K8S_ANNOTATION_VIP_KEY])
+
+        exception_raised = False
+        try:
+            self.neutron.show_vip(vip_annotation['id'])
+        except exceptions.NotFound:
+            exception_raised = True
+        self.assertFalse(exception_raised, "Neutron LB VIP not created")
+
+        try:
+            self.neutron.show_pool(vip_annotation['pool_id'])
+        except exceptions.NotFound:
+            exception_raised = True
+        self.assertFalse(exception_raised, "Neutron LB Pool not created")
+
+        members = self.neutron.list_members(
+            vip_annotation['pool_id'])['members']
+        self.assertEqual(len(members), num_members)
+
     def _get_neutron_client(self):
         """Get neutron client.
 

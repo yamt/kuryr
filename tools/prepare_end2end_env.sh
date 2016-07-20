@@ -43,8 +43,6 @@ until [[ ${attempts} -gt 45 ]] || \
   printf "."
   sleep 5
 done
-deactivate
-
 attempts=0
 printf "Checking if kubernetes API is running...."
 until [[ ${attempts} -gt 45 ]] || curl http://localhost:8080 &> /dev/null; do
