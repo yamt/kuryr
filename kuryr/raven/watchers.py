@@ -54,10 +54,9 @@ def _update_annotation(delegator, path, kind, annotations):
     metadata.update({'annotations': annotations})
     data.update({'metadata': metadata})
 
-    response = yield from delegator(
+    yield from delegator(
         requests.patch, constants.K8S_API_ENDPOINT_BASE + path,
         data=jsonutils.dumps(data), headers=PATCH_HEADERS)
-    assert response.status_code == requests.codes.ok
     LOG.debug("Successfully updated the annotations.")
 
 
@@ -93,6 +92,86 @@ def _get_pool_members(pool_members):
                                       member['protocol_port'],
                                       member_id=member['id']))
     return members
+
+
+@asyncio.coroutine
+def _create_floating_ip(delegator, client, ext_net_id, vip, external_ips,
+                        annotations):
+
+    # TODO(devvesa): only one ip is considered now
+    external_ip = external_ips[0]
+    if len(external_ips) > 1:
+        LOG.info(_LI('Found more than one external IPs. '
+                     'Only the first one %(ext_ip)s will be '
+                     'used.'),
+                 {'ext_ip': external_ip})
+
+    try:
+        fip = yield from delegator(
+            client.create_floatingip,
+            {
+                'floatingip': {
+                    'floating_network_id': ext_net_id,
+                    'port_id': vip['port_id'],
+                    'floating_ip_address': external_ip
+                }
+            }
+        )
+
+    except n_exceptions.InvalidIpForNetworkClient:
+        # In case the IP is invalid, we'll ignore the error and
+        # won't assign anyone
+        if constants.K8S_ANNOTATION_FIP_KEY in annotations:
+            constants.K8S_ANNOTATION_FIP_KEY = None
+        return
+
+    except n_exceptions.IpAddressInUseClient:
+        # IP already created. If it is associated: do nothing.
+        # If it is not, associate
+        fip_neutron = yield from delegator(
+            client.list_floatingips,
+            floating_ip_address=external_ip)
+        fip_neutron = fip_neutron['floatingips'][0]
+
+        if fip_neutron['port_id']:
+            LOG.info(_LI('FIP "%(fip)s" already associated to port "%(port)s".'
+                         ' Can not associate it to "%(vip)s"'),
+                     {'fip': external_ip,
+                      'port': fip['port'],
+                      'vip': vip['port_id']})
+
+            if constants.K8S_ANNOTATION_FIP_KEY in annotations:
+                constants.K8S_ANNOTATION_FIP_KEY = None
+
+            return
+
+        fip = yield from delegator(
+            client.update_floatingip,
+            fip_neutron['id'],
+            {'floatingip': {'port_id': vip['port_id']}}
+        )
+
+    fip = fip['floatingip']
+
+    LOG.info(_LI('FIP "%(fip)s" associated '
+                 'to a Load Balancer VIP "%(vip)s"'),
+             {'vip': vip['address'],
+              'fip': fip['floating_ip_address']})
+
+    annotations.update(
+        {constants.K8S_ANNOTATION_FIP_KEY:
+            jsonutils.dumps(fip)})
+
+
+@asyncio.coroutine
+def _delete_floating_ip(delegator, client, a_fip, annotations=None):
+
+    yield from delegator(
+        client.delete_floatingip,
+        a_fip['id'])
+
+    if annotations:
+        annotations[constants.K8S_ANNOTATION_FIP_KEY] = None
 
 
 @asyncio.coroutine
@@ -680,8 +759,9 @@ class K8sServicesWatcher(K8sAPIWatcher):
         metadata = content.get('metadata', {})
         annotations = metadata.get('annotations', {})
         service_name = metadata.get('name', '')
+        service_spec = content.get('spec', {})
         if service_name == 'kubernetes':
-            LOG.debug('Ignore "kubernetes" infra service')
+            LOG.info(_LI('Ignore "kubernetes" infra service'))
             return
 
         if event_type == ADDED_EVENT:
@@ -704,7 +784,6 @@ class K8sServicesWatcher(K8sAPIWatcher):
 
             # Service translation starts here.
             with (yield from self.service_added):
-                service_spec = content.get('spec', {})
                 service_type = service_spec.get('type', 'ClusterIP')
                 if service_type != 'ClusterIP':
                     LOG.warning(
@@ -800,12 +879,104 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 LOG.debug('Creating SG rule %s', req)
                 self.neutron.create_security_group_rule(req)
 
+                if 'externalIPs' in service_spec:
+
+                    yield from _create_floating_ip(
+                        self.sequential_delegate,
+                        self.neutron,
+                        self._external_service_network['id'],
+                        vip,
+                        service_spec['externalIPs'],
+                        annotations)
+
                 if path:
                     yield from _update_annotation(
                         self.delegate, path, 'Service', annotations)
+
                 # Notify the service translation is done to
                 # K8sEndpointsWatcher.
                 self.service_added.notify()
+
+        elif event_type == MODIFIED_EVENT:
+
+            # NOTE: now only modifications of external IP is considered
+            if (constants.K8S_ANNOTATION_FIP_KEY in annotations and
+                'externalIPs' not in service_spec):
+
+                # Existing external ip deleted
+                annotated_fip = annotations[constants.K8S_ANNOTATION_FIP_KEY]
+                yield from _delete_floating_ip(
+                    self.sequential_delegate,
+                    self.neutron,
+                    jsonutils.loads(annotated_fip),
+                    annotations)
+
+                yield from _update_annotation(
+                    self.delegate,
+                    metadata.get('selfLink'),
+                    'Service',
+                    annotations)
+
+            elif (constants.K8S_ANNOTATION_FIP_KEY not in annotations and
+                'externalIPs' in service_spec):
+                # An external IP is added at a an existing service which does
+                # not have an external ip
+
+                annotated_vip = annotations[constants.K8S_ANNOTATION_VIP_KEY]
+                yield from _create_floating_ip(
+                    self.sequential_delegate,
+                    self.neutron,
+                    self._external_service_network['id'],
+                    jsonutils.loads(annotated_vip),
+                    service_spec['externalIPs'],
+                    annotations)
+
+                yield from _update_annotation(
+                    self.delegate,
+                    metadata.get('selfLink'),
+                    'Service',
+                    annotations)
+
+            elif (constants.K8S_ANNOTATION_FIP_KEY in annotations and
+                'externalIPs' in service_spec):
+
+                # Cover the case where the user changes the external ip
+                annotated_fip = annotations[constants.K8S_ANNOTATION_FIP_KEY]
+                annotated_vip = annotations[constants.K8S_ANNOTATION_VIP_KEY]
+
+                old_fip = jsonutils.loads(
+                    annotated_fip)['floating_ip_address']
+
+                # TODO(devvesa): cover the case where more than one IP is
+                # assigned
+                new_fip = service_spec['externalIPs'][0]
+
+                # Skip when ips are the same ones
+                if old_fip == new_fip:
+                    return
+
+                # Delete the old one
+                yield from _delete_floating_ip(
+                    self.sequential_delegate,
+                    self.neutron,
+                    jsonutils.loads(annotated_fip),
+                    annotations)
+
+                # Create the new one
+                yield from _create_floating_ip(
+                    self.sequential_delegate,
+                    self.neutron,
+                    self._external_service_network['id'],
+                    jsonutils.loads(annotated_vip),
+                    service_spec['externalIPs'],
+                    annotations)
+
+                # Update the annotation
+                yield from _update_annotation(
+                    self.delegate,
+                    metadata.get('selfLink'),
+                    'Service',
+                    annotations)
 
         elif event_type == DELETED_EVENT:
             with (yield from self.service_deleted):
@@ -875,6 +1046,15 @@ class K8sServicesWatcher(K8sAPIWatcher):
                     with excutils.save_and_reraise_exception():
                         LOG.error(_LE("Error happened during deleting a"
                                       " Neutron pool: %s"), ex)
+
+                if constants.K8S_ANNOTATION_FIP_KEY in annotations:
+
+                    a_fip = annotations[constants.K8S_ANNOTATION_FIP_KEY]
+                    yield from _delete_floating_ip(
+                        self.sequential_delegate,
+                        self.neutron,
+                        jsonutils.loads(a_fip))
+
                 LOG.debug('Successfully deleted the Neutron pool %s',
                           neutron_pool)
                 self.service_deleted.notify()
@@ -979,7 +1159,6 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
             service_response = yield from aio.methods.get(
                 endpoint=service_endpoint, loop=self._event_loop)
             status, _, _ = yield from service_response.read_headers()
-            assert status == 200
             service_response_body = yield from service_response.read_all()
             service = utils.utf8_json_decoder(service_response_body)
             service_metadata = service.get('metadata', {})

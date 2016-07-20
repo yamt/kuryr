@@ -113,7 +113,7 @@ class _FakeRaven(raven.Raven):
             'id': str(uuid.uuid4()),
             'name': raven.HARDCODED_NET_NAME,
         }
-        subnet_cidr = config.CONF.k8s.cluster_vip_subnet
+        subnet_cidr = config.CONF.k8s.cluster_external_subnet
         fake_subnet = base.TestKuryrBase._get_fake_v4_subnet(
             self._network['id'],
             name=raven.HARDCODED_NET_NAME + '-' + subnet_cidr,

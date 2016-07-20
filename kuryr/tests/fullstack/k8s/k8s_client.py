@@ -14,6 +14,7 @@ from tempfile import NamedTemporaryFile
 
 from kuryr.common import constants
 
+from oslo_serialization import jsonutils
 import pykube
 import time
 import yaml
@@ -59,7 +60,7 @@ class K8sTestClient(object):
     def __init__(self, context_file):
         self.api = pykube.HTTPClient(pykube.KubeConfig.from_file(context_file))
 
-    def _wait_until_created(self, obj, label, max_attempts=1000):
+    def _wait_until_created(self, obj, label, max_attempts=100):
         """Waits until a kubernetes object is in 'Ready' status. """
 
         # TODO(devvesa): Improve this loop somehow
@@ -193,7 +194,8 @@ class K8sTestClient(object):
     def create_service(self,
                        deployment,
                        name='test-service',
-                       service_port=80):
+                       service_port=80,
+                       external_ips=None):
 
         labels = deployment.obj['metadata']['labels']
         rpcs = deployment.obj['spec']['replicas']
@@ -209,6 +211,9 @@ class K8sTestClient(object):
                 'selector': labels
             }
         }
+        if external_ips:
+            obj['spec']['externalIPs'] = external_ips
+
         service = pykube.Service(self.api, obj)
         service.create()
 
@@ -220,16 +225,16 @@ class K8sTestClient(object):
 
         # Wait for the endpoints of the service to be created
         attempts_endpoint = 0
-        max_attempts_endpoint = 10
+        max_attempts_endpoint = 100
         found = False
         for endpoint in query_endpoint:
             if endpoint.obj['metadata']['name'] == name:
                 found = True
                 while ((not endpoint.obj['subsets'] or
                         len(endpoint.obj['subsets'][0]['addresses']) != rpcs)
-                       and attempts_endpoint < max_attempts_endpoint):
+                        and attempts_endpoint < max_attempts_endpoint):
                     attempts_endpoint += 1
-                    time.sleep(3)
+                    time.sleep(0.5)
                     endpoint.reload()
                 if attempts_endpoint > max_attempts_endpoint:
                     raise Exception("Endpoint %(name)s took too much time "
@@ -242,6 +247,44 @@ class K8sTestClient(object):
             raise Exception("Endpoints not created for service %s", name)
 
         return service
+
+    def modify_service(self, service,
+                       external_ips=None, max_attempts=100):
+
+        # We right now only consider the modification of external IPs
+        # TODO(devvesa): ensure multiple ips
+        service.reload()
+        if external_ips:
+            service.obj['spec']['externalIPs'] = [external_ips]
+            service.obj['spec']['deprecatedPublicIPs'] = [external_ips]
+        elif 'externalIPs' in service.obj['spec']:
+            # Way to delete keys on merge-patches according to RFC:
+            #     https://tools.ietf.org/html/rfc7386
+            service.obj['spec']['externalIPs'] = None
+            service.obj['spec']['deprecatedPublicIPs'] = None
+
+        service.update()
+
+        attempts_neutron = 0
+        while attempts_neutron < max_attempts:
+            annotations = service.obj['metadata']['annotations']
+            if (external_ips and
+                constants.K8S_ANNOTATION_FIP_KEY in annotations and
+                jsonutils.loads(annotations[constants.K8S_ANNOTATION_FIP_KEY])
+                    ['floating_ip_address'] == external_ips):
+
+                # New external IP is assigned
+                break
+
+            if (not external_ips and
+                constants.K8S_ANNOTATION_FIP_KEY not in annotations):
+
+                # Deleted external IP is removed
+                break
+
+            time.sleep(0.5)
+            service.reload()
+            attempts_neutron += 1
 
     def delete_obj(self, obj, max_attempts=120):
 

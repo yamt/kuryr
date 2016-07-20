@@ -235,9 +235,11 @@ class TestRaven(base.TestKuryrBase):
             name=raven.HARDCODED_NET_NAME + '-router').AndReturn([])
         router_id = str(uuid.uuid4())
         router_name = raven.HARDCODED_NET_NAME + '-router'
+        external_network_id = str(uuid.uuid4())
         fake_router_request = {
             'router': {
                 'name': router_name,
+                'external_gateway_info': {'network_id': external_network_id}
             },
         }
         fake_router_response = copy.deepcopy(fake_router_request)
@@ -270,13 +272,11 @@ class TestRaven(base.TestKuryrBase):
 
         # Mock the cluster network call by returning an empty list
         # and then preparing a new entity
-        cluster_network_name = raven.HARDCODED_NET_NAME + '-cluster-pool'
+        cluster_network_name = raven.HARDCODED_NET_NAME + '-external-net'
         self.mox.StubOutWithMock(raven.controllers, '_get_networks_by_attrs')
         self.mox.StubOutWithMock(r.neutron, 'create_network')
         raven.controllers._get_networks_by_attrs(
             name=cluster_network_name).AndReturn([])
-        cluster_network_id = str(uuid.uuid4())
-        cluster_tenant_id = str(uuid.uuid4())
         fake_cluster_network_response = {
             'network': {
                 'name': cluster_network_name,
@@ -284,48 +284,41 @@ class TestRaven(base.TestKuryrBase):
                 'admin_state_up': False,
                 'shared': False,
                 'status': 'ACTIVE',
-                'tenant_id': cluster_tenant_id,
-                'id': cluster_network_id,
+                'tenant_id': str(uuid.uuid4()),
+                'id': external_network_id,
             },
         }
         r.neutron.create_network(
-            {'network': {'name': cluster_network_name}}).AndReturn(
+                {'network': {'name': cluster_network_name,
+                             'router:external': True}}).AndReturn(
             fake_cluster_network_response)
 
         # Mock the cluster subnet call by returning an empty list
         # and then preparing a new entity
         self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
         self.mox.StubOutWithMock(r.neutron, 'create_subnet')
-        cluster_subnet_name = raven.HARDCODED_NET_NAME + '-cluster-pool-subnet'
-        cluster_subnet_range = ipaddress.ip_network(
-            config.CONF.k8s.cluster_vip_subnet)
+        external_subnet_name = raven.HARDCODED_NET_NAME + '-external-subnet'
+        external_subnet_range = ipaddress.ip_network(
+            config.CONF.k8s.cluster_external_subnet)
         raven.controllers._get_subnets_by_attrs(
-            name=cluster_subnet_name,
-            network_id=cluster_network_id).AndReturn([])
-        fake_cluster_subnet_id = str(uuid.uuid4())
-        fake_cluster_subnet_req = {
+            name=external_subnet_name,
+            network_id=external_network_id).AndReturn([])
+        fake_external_subnet_req = {
             'subnet': {
-                'name': cluster_subnet_name,
-                'network_id': cluster_network_id,
+                'name': external_subnet_name,
+                'network_id': external_network_id,
                 'ip_version': 4,
-                'cidr': str(cluster_subnet_range),
+                'cidr': str(external_subnet_range),
                 'enable_dhcp': False
             }
         }
-        fake_cluster_subnet_res = copy.deepcopy(
-            fake_cluster_subnet_req)
-        fake_cluster_subnet_res['subnet']['id'] = fake_cluster_subnet_id
+        fake_external_subnet_res = copy.deepcopy(
+            fake_external_subnet_req)
+        fake_external_subnet_id = str(uuid.uuid4())
+        fake_external_subnet_res['subnet']['id'] = fake_external_subnet_id
         r.neutron.create_subnet(
-            fake_cluster_subnet_req).AndReturn(
-                fake_cluster_subnet_res)
-
-        self.mox.StubOutWithMock(raven.controllers, '_get_ports_by_attrs')
-        raven.controllers._get_ports_by_attrs(
-            unique=False, device_owner='network:router_interface',
-            device_id=router_id, network_id=cluster_network_id).AndReturn([])
-        self.mox.StubOutWithMock(r.neutron, 'add_interface_router')
-        r.neutron.add_interface_router(
-            router_id, {'subnet_id': fake_cluster_subnet_id}).AndReturn(None)
+            fake_external_subnet_req).AndReturn(
+                fake_external_subnet_res)
 
         # Mock the service network call by returning an empty list
         # and then preparing a new entity
@@ -377,6 +370,8 @@ class TestRaven(base.TestKuryrBase):
 
         # Mock the router port call by returning an empty list
         # and then preparing a new entity
+        self.mox.StubOutWithMock(raven.controllers, '_get_ports_by_attrs')
+        self.mox.StubOutWithMock(r.neutron, 'add_interface_router')
         raven.controllers._get_ports_by_attrs(
             unique=False, device_owner='network:router_interface',
             device_id=router_id, network_id=service_network_id).AndReturn([])
@@ -494,27 +489,27 @@ class TestRaven(base.TestKuryrBase):
 
         # Mock the service network call by returning an existing one
         self.mox.StubOutWithMock(raven.controllers, '_get_networks_by_attrs')
-        cluster_network_id = str(uuid.uuid4())
+        external_network_id = str(uuid.uuid4())
         tenant_id = str(uuid.uuid4())
         fake_cluster_network = {
-            'name': raven.HARDCODED_NET_NAME + '-cluster-pool',
+            'name': raven.HARDCODED_NET_NAME + '-external-net',
             'subnets': [],
             'admin_state_up': False,
             'shared': False,
             'status': 'ACTIVE',
             'tenant_id': tenant_id,
-            'id': cluster_network_id,
+            'id': external_network_id,
         }
         raven.controllers._get_networks_by_attrs(
-            name=raven.HARDCODED_NET_NAME + '-cluster-pool').AndReturn(
+            name=raven.HARDCODED_NET_NAME + '-external-net').AndReturn(
             [fake_cluster_network])
 
         cluster_subnet_id = str(uuid.uuid4())
-        cluster_sub_name = raven.HARDCODED_NET_NAME + '-cluster-pool-subnet'
+        cluster_sub_name = raven.HARDCODED_NET_NAME + '-external-subnet'
         self.mox.StubOutWithMock(raven.controllers, '_get_subnets_by_attrs')
         fake_cluster_subnet_res = {
             'name': cluster_sub_name,
-            'network_id': cluster_network_id,
+            'network_id': external_network_id,
             'ip_version': 4,
             'subnetpool_id': subnetpool_id,
             'id': cluster_subnet_id,
@@ -523,26 +518,8 @@ class TestRaven(base.TestKuryrBase):
         }
         raven.controllers._get_subnets_by_attrs(
             name=cluster_sub_name,
-            network_id=cluster_network_id).AndReturn(
+            network_id=external_network_id).AndReturn(
                 [fake_cluster_subnet_res])
-
-        self.mox.StubOutWithMock(raven.controllers, '_get_ports_by_attrs')
-        fake_cluster_port = {
-            "network_id": cluster_network_id,
-            "tenant_id": tenant_id,
-            "device_owner": "network:router_interface",
-            "mac_address": "fa:16:3e:20:57:c3",
-            "fixed_ips": [{
-                'subnet_id': cluster_subnet_id,
-                'ip_address': '10.0.0.2',
-            }],
-            "id": str(uuid.uuid4()),
-            "device_id": router_id,
-        }
-        raven.controllers._get_ports_by_attrs(
-            unique=False, device_owner='network:router_interface',
-            device_id=router_id, network_id=cluster_network_id).AndReturn(
-                [fake_cluster_port])
 
         # Mock the service network call by returning an existing one
         service_network_id = str(uuid.uuid4())
@@ -591,6 +568,7 @@ class TestRaven(base.TestKuryrBase):
             "id": port_id,
             "device_id": router_id,
         }
+        self.mox.StubOutWithMock(raven.controllers, '_get_ports_by_attrs')
         raven.controllers._get_ports_by_attrs(
             unique=False, device_owner='network:router_interface',
             device_id=router_id, network_id=service_network_id).AndReturn(
