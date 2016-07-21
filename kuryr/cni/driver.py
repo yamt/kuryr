@@ -36,7 +36,6 @@ from kuryr.common import constants
 from kuryr.common import exceptions
 
 
-config.init(args=None)
 LOG = logging.getLogger(__name__)
 
 
@@ -178,5 +177,6 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
 
 def run_driver():
     """Runs the CNI driver."""
+    config.init(args=None)
     driver = KuryrCNIK8sNeutronDriver()
     return driver.run_command()
