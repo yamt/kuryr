@@ -32,7 +32,7 @@ pushd "${MIDONET_SANDBOX_SRC_DIR}" \
 printf " \e[32mDONE\e[39m\n"
 
 printf "Starting the midonet sandbox..."
-sh "${TOX_DIR}/scripts/run_sandbox.sh" start >>"${LOG_DIR}/sandbox_log" 2>&1
+bash "${TOX_DIR}/scripts/run_sandbox.sh" start >>"${LOG_DIR}/sandbox_log" 2>&1
 printf " \e[32mDONE\e[39m\n"
 
 attempts=0
