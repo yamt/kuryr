@@ -71,14 +71,9 @@ class K8sBaseTest(base.BaseTestCase):
         self.assertEqual(network['name'], ns.name)
         self.assertEqual(subnet['name'], ("%s-subnet" % ns.name))
 
-    def assertNeutronPort(self, pod):
-        """Ensure that the pod has a neutron port.
+    def _get_port_annotation(self, pod):
+        """Returns port annotation from pod's metadata
 
-        For a given pod, get its metadata and ensure that Neutron
-        has the port in its database.
-
-        :param pod: the created K8s pod that should have a corresponding
-                    Neutron port
         """
         self.assertIn('annotations', pod.obj['metadata'])
         annotations = pod.obj['metadata']['annotations']
@@ -86,6 +81,19 @@ class K8sBaseTest(base.BaseTestCase):
                       annotations)
         port_annotation = jsonutils.loads(
             annotations[constants.K8S_ANNOTATION_PORT_KEY])
+
+        return port_annotation
+
+    def assertNeutronPort(self, pod):
+        """Ensure that the pod has a neutron port.
+
+        For a given pod, that Neutron has the port in its database.
+
+        :param pod: the created K8s pod that should have a corresponding
+                    Neutron port
+        """
+
+        port_annotation = self._get_port_annotation(pod)
 
         exception_raised = False
         try:
@@ -109,6 +117,26 @@ class K8sBaseTest(base.BaseTestCase):
         self.assertEqual(port_annotation['name'], port['name'])
         self.assertEqual(annotations_ip['ip_address'], port_ip['ip_address'])
         self.assertEqual(annotations_ip['subnet_id'], port_ip['subnet_id'])
+
+    def assertNeutronSG(self, pod, sg, equals=True):
+        """Assert Neutron Security Group
+
+        Ensure the pod's port has the given security group
+        The equals parameter allows testing for unequally
+        """
+        port_annotation = self._get_port_annotation(pod)
+
+        exception_raised = False
+        try:
+            port = self.neutron.show_port(port_annotation['id'])['port']
+        except exceptions.NotFound:
+            exception_raised = True
+        self.assertFalse(exception_raised, "Neutron port not created")
+
+        if equals:
+            self.assertIn(sg, port['security_groups'])
+        else:
+            self.assertNotIn(sg, port['security_groups'])
 
     def assertPingConnection(self, pod1, pod2):
         # I am going to assume single container pods

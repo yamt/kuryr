@@ -95,7 +95,8 @@ class K8sTestClient(object):
     def create_pod(self,
                    name='testpod',
                    image='nginx',
-                   namespace='default'):
+                   namespace='default',
+                   labels=None):
         """Create a pod. """
 
         obj = {
@@ -104,9 +105,7 @@ class K8sTestClient(object):
             'metadata': {
                 'name': name,
                 'namespace': namespace,
-                'labels': {
-                    'environment': 'test'
-                },
+                'labels': {'environment': 'test'},
                 'annotations': {}
             },
             'spec': {
@@ -116,6 +115,11 @@ class K8sTestClient(object):
                 }]
             }
         }
+
+        if labels is not None:
+            for k in labels:
+                obj['metadata']['labels'][k] = labels[k]
+
         pod = pykube.Pod(self.api, obj)
         pod.create()
         self._wait_until_created(pod, label='kuryr.org/neutron-port')
@@ -259,6 +263,18 @@ class K8sTestClient(object):
         raise Exception("%(kind)s %(name)s took too much time to be deleted."
                         "Manual cleaning is required!" %
                         {'kind': obj.kind, 'name': obj.name})
+
+    def add_pod_labels(self, pod, labels):
+        """Add labels o a Pod
+
+        Add labels to the already existing labels for a pod
+        Assumes the pod already has labels as the environment is set
+        at creation time
+        """
+        pod_labels = pod.obj['metadata']['labels']
+        for k in labels:
+            pod_labels[k] = labels[k]
+        pod.update()
 
     def delete_all(self):
         """Delete all pods created."""
