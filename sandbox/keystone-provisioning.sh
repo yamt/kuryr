@@ -1,47 +1,46 @@
 #!/bin/bash -x
 
-env
-SANDBOX_NAME=${SANDBOX_NAME:-mdts}
+SANDBOX_NAME=${SANDBOX_NAME:-k8s}
 INDOCKER="docker exec mnsandbox${SANDBOX_NAME}_keystone_1"
 KEYSTONE_IP=$(docker exec mnsandbox${SANDBOX_NAME}_keystone_1 hostname --ip-address)
 NEUTRON_IP=$(docker exec mnsandbox${SANDBOX_NAME}_neutron_1 hostname --ip-address)
-
 OS_SERVICE_TOKEN="ADMIN"
 OS_SERVICE_ENDPOINT="http://$KEYSTONE_IP:35357/v2.0"
 
-KEYSTONE="$INDOCKER keystone --os-endpoint=$OS_SERVICE_ENDPOINT --os-token=$OS_SERVICE_TOKEN"
-$INDOCKER keystone-manage db_sync
+$INDOCKER keystone-manage db_sync >> /dev/null 2>&1
 
+attempts=0
+printf "Checking if Keystone API is running...."
+until [[ ${attempts} -gt 45 ]] || \
+    curl http://${KEYSTONE_IP}:5000 &> /dev/null; do
+  attempts=$((attempts+1))
+  printf "."
+  sleep 5
+done
 
-$KEYSTONE role-create --name admin
-$KEYSTONE role-create --name __member__
+OPENSTACK="$INDOCKER openstack --os-url=$OS_SERVICE_ENDPOINT --os-token=$OS_SERVICE_TOKEN"
+$OPENSTACK project create admin
+$OPENSTACK role create admin
+$OPENSTACK user create admin --password admin
+$OPENSTACK role add admin --user admin --project admin
 
-$KEYSTONE tenant-create --name admin --description "Admin tenant"
-$KEYSTONE user-create --name admin --pass admin
-$KEYSTONE user-role-add --user admin --tenant admin --role admin
-$KEYSTONE user-role-add --user admin --tenant admin --role __member__
+$OPENSTACK project create service --description 'Service apis'
+$OPENSTACK user create neutron --password neutron
+$OPENSTACK role add admin --user neutron --project service
 
-$KEYSTONE tenant-create --name service --description "Service tenant"
-$KEYSTONE user-create --name neutron --pass neutron
-$KEYSTONE user-role-add --user neutron --tenant service --role admin
-$KEYSTONE user-role-add --user neutron --tenant service --role __member__
+$OPENSTACK service create --name keystone identity
+$OPENSTACK service create --name neutron network
 
-$KEYSTONE service-create --name keystone --type identity --description "OSt identity"
-$KEYSTONE service-create --name neutron --type network --description "OSt network"
-
-KEYSTONE_SERVICE_ID=$($KEYSTONE service-list | awk  '/ identity / {print $2}' | xargs | cut -d' ' -f1)
-NEUTRON_SERVICE_ID=$($KEYSTONE service-list | awk  '/ network / {print $2}' | xargs | cut -d' ' -f1)
-
-$KEYSTONE endpoint-create \
-  --service-id $KEYSTONE_SERVICE_ID \
+$OPENSTACK endpoint create \
   --publicurl http://$KEYSTONE_IP:5000/v2.0 \
   --internalurl http://$KEYSTONE_IP:5000/v2.0 \
   --adminurl http://$KEYSTONE_IP:35357/v2.0 \
-  --region regionOne
+  --region regionOne \
+  keystone
 
-$KEYSTONE endpoint-create \
-  --service-id $NEUTRON_SERVICE_ID \
+$OPENSTACK endpoint create \
   --publicurl http://$NEUTRON_IP:9696 \
   --internalurl http://$NEUTRON_IP:9696 \
   --adminurl http://$NEUTRON_IP:9696 \
-  --region regionOne
+  --region regionOne \
+  neutron

@@ -35,14 +35,8 @@ printf "Starting the midonet sandbox..."
 bash "${TOX_DIR}/scripts/run_sandbox.sh" start >>"${LOG_DIR}/sandbox_log" 2>&1
 printf " \e[32mDONE\e[39m\n"
 
-attempts=0
-printf "Checking if Keystone API is running...."
-until [[ ${attempts} -gt 45 ]] || \
-    curl http://$(sandbox-manage sandbox-list --details | grep keystone | awk '{print $10}'):5000 &> /dev/null; do
-  attempts=$((attempts+1))
-  printf "."
-  sleep 5
-done
+deactivate
+
 attempts=0
 printf "Checking if kubernetes API is running...."
 until [[ ${attempts} -gt 45 ]] || curl http://localhost:8080 &> /dev/null; do
