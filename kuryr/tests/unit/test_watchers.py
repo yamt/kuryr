@@ -25,6 +25,7 @@ import six
 from kuryr.common import config
 from kuryr.common import constants
 from kuryr.raven import aio
+from kuryr.raven import models
 from kuryr.raven import raven
 from kuryr.raven import watchers
 from kuryr.tests.unit import base
@@ -967,13 +968,11 @@ class TestK8sEndpointsWatcher(TestK8sWatchersBase):
         fake_member_future = self.make_future(fake_member_response)
 
         self.mox.StubOutWithMock(self.fake_raven, 'sequential_delegate')
-        if fake_endpoints_event['type'] == watchers.MODIFIED_EVENT:
-            fake_empty_members_future = self.make_future({'members': []})
-            self.fake_raven.sequential_delegate(
-                mox.IsA(self.fake_raven.neutron.list_members),
-                pool_id=fake_member['pool_id'], address=fake_member['address'],
-                protocol_port=fake_member['protocol_port']).AndReturn(
-                fake_empty_members_future)
+        fake_empty_members_future = self.make_future({'members': []})
+        self.fake_raven.sequential_delegate(
+            mox.IsA(self.fake_raven.neutron.list_members),
+            pool_id=fake_member['pool_id']).AndReturn(
+            fake_empty_members_future)
         self.fake_raven.sequential_delegate(
             mox.IsA(self.fake_raven.neutron.create_member),
             {'member': fake_member}).AndReturn(
@@ -991,3 +990,93 @@ class TestK8sEndpointsWatcher(TestK8sWatchersBase):
             "object": self.fake_endpoints_object,
         }
         self._test_translate(fake_endpoints_event)
+
+    def test_translate_removal(self):
+        """Test if the translate method downscales the neutron pool"""
+        fake_service_object = copy.deepcopy(self.fake_service_object)
+        pool_id = str(uuid.uuid4())
+        fake_pool = {
+            'name': fake_service_object['metadata']['name'],
+            'subnet_id': self.fake_raven._subnet['id'],
+            'lb_method': config.CONF.raven.lb_method,
+            'id': pool_id,
+        }
+        fake_service_object['metadata'].update(
+            {'annotations':
+             {constants.K8S_ANNOTATION_POOL_KEY: jsonutils.dumps(fake_pool)}})
+
+        fake_service_response = test_raven._FakeResponse(
+            utils.utf8_json_encoder(fake_service_object),
+            loop=self.fake_raven._event_loop)
+        fake_service_future = self.make_future(fake_service_response)
+        fake_namespace = fake_service_object['metadata']['namespace']
+        fake_service_name = fake_service_object['metadata']['name']
+        endpoint = utils.get_service_endpoint(
+            fake_namespace, fake_service_name)
+
+        self.mox.StubOutWithMock(aio.methods, 'get')
+        aio.methods.get(endpoint=endpoint,
+                        loop=self.fake_raven._event_loop).AndReturn(
+            fake_service_future)
+
+        subsets = self.fake_endpoints_object['subsets']
+        fake_ip_address = subsets[0]['addresses'][0]['ip']
+        fake_protocol_port = subsets[0]['ports'][0]['port']
+
+        members_to_remove = set((
+            models.PoolMember(
+                '172.16.0.43',
+                fake_protocol_port,
+                '92f06a43-06da-4271-9aba-53b691003f59'),
+            models.PoolMember(
+                '172.16.0.44',
+                fake_protocol_port,
+                '92f06a43-06da-4271-9aba-53b691003f59')))
+
+        members_to_remove_list = list(members_to_remove)
+
+        self.mox.StubOutWithMock(self.fake_raven, 'sequential_delegate')
+        fake_extra_members_future = self.make_future(
+            {'members': [
+                {'address': fake_ip_address,
+                 'admin_state_up': True,
+                 'id': '03cb69ba-5f2d-4d4e-8c7e-64e3c3638c09',
+                 'pool_id': 'de24e2c0-64f1-4809-86bd-161151991628',
+                 'protocol_port': fake_protocol_port,
+                 'status': 'ACTIVE',
+                 'status_description': None,
+                 'tenant_id': '80ccf7f63bbd48188baf9f8a4a4bcfa4',
+                 'weight': 1},
+                {'address': '172.16.0.43',
+                 'admin_state_up': True,
+                 'id': str(members_to_remove_list[0].uuid),
+                 'pool_id': 'de24e2c0-64f1-4809-86bd-161151991628',
+                 'protocol_port': members_to_remove_list[0].protocol_port,
+                 'status': 'ACTIVE',
+                 'status_description': None,
+                 'tenant_id': '80ccf7f63bbd48188baf9f8a4a4bcfa4',
+                 'weight': 1},
+                {'address': '172.16.0.44',
+                 'admin_state_up': True,
+                 'id': str(members_to_remove_list[1].uuid),
+                 'pool_id': 'de24e2c0-64f1-4809-86bd-161151991628',
+                 'protocol_port': members_to_remove_list[1].protocol_port,
+                 'status': 'ACTIVE',
+                 'status_description': None,
+                 'tenant_id': '80ccf7f63bbd48188baf9f8a4a4bcfa4',
+                 'weight': 1}]})
+        self.fake_raven.sequential_delegate(
+            mox.IsA(self.fake_raven.neutron.list_members),
+            pool_id=fake_pool['id']).AndReturn(
+            fake_extra_members_future)
+        for member in members_to_remove:
+            self.fake_raven.sequential_delegate(
+                mox.IsA(self.fake_raven.neutron.delete_member),
+                str(member.uuid)).AndReturn(self.none_future)
+
+        self.mox.ReplayAll()
+        self.fake_raven._event_loop.run_until_complete(
+            self.translate({
+                'type': watchers.MODIFIED_EVENT,
+                'object': self.fake_endpoints_object,
+            }))

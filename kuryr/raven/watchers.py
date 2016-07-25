@@ -28,6 +28,7 @@ from kuryr._i18n import _LW
 from kuryr.common import config
 from kuryr.common import constants
 from kuryr.raven import aio
+from kuryr.raven import models
 from kuryr import utils
 
 
@@ -58,6 +59,79 @@ def _update_annotation(delegator, path, kind, annotations):
         data=jsonutils.dumps(data), headers=PATCH_HEADERS)
     assert response.status_code == requests.codes.ok
     LOG.debug("Successfully updated the annotations.")
+
+
+def _get_endpoint_members(subsets):
+    """Returns a set of tuples (address, port) of the endpoint members.
+
+    :param subsets: The dictionary represents the subsets property.
+    """
+    members = set()
+    for subset in subsets:
+        ports = subset['ports']
+        if 'addresses' not in subset:
+            LOG.debug('Subset %s does not yet have addresses to process',
+                      subset)
+            continue
+        addresses = subset['addresses']
+        for port in ports:
+            protocol_port = port['port']
+            for address in addresses:
+                members.add(models.PoolMember(address['ip'], protocol_port))
+    return members
+
+
+def _get_pool_members(pool_members):
+    """Returns a set of tuples (address, port) of the pool members.
+
+    :param pool_members: The response dictionary of listing pool members with
+                         neutronclient
+    """
+    members = set()
+    for member in pool_members:
+        members.add(models.PoolMember(member['address'],
+                                      member['protocol_port'],
+                                      member_id=member['id']))
+    return members
+
+
+@asyncio.coroutine
+def _add_pool_member(delegator, client, pool_id, address, protocol_port):
+    """Creates an LBaaS member
+
+    :param delegator: Object to delegate the creation of the member
+    :param client: neutron client instance
+    :param pool_id: uuid of the pool the member will be part of
+    :param address: IPv4 address object of the LBaaS pool member
+    :param port: Protocol port for the LBaaS pool to access the member
+    """
+    response = yield from delegator(
+        client.create_member,
+        {
+            'member': {
+                'pool_id': pool_id,
+                'address': str(address),
+                'protocol_port': protocol_port,
+                'weight': 1,
+            },
+        })
+    LOG.debug('Successfully created a new member %(member)s for the pool '
+              '%(pool_id)s',
+              {'member': response['member'], 'pool_id': pool_id})
+
+
+@asyncio.coroutine
+def _del_pool_member(delegator, client, member_id):
+    """Creates an LBaaS member
+
+    :param delegator: Object to delegate the creation of the member
+    :param client: neutron client instance
+    :param member_id: uuid object of the pool member to delete
+    """
+    yield from delegator(
+        client.delete_member,
+        str(member_id))
+    LOG.debug('Successfully deleted LBaaS pool member %s.', member_id)
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -893,64 +967,6 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
         :param decoded_json: An endpoint event to be translated.
         """
         @asyncio.coroutine
-        def create_pool_members(pool_id, subsets, reuse=False):
-            """Creates pool members from the given subsets of the endpoints.
-
-            :param pool_id: The ID of the pool with which the pool members are
-                            associated.
-            :param subsets: The dictionary represents the subsets property.
-            :param reuse: Whether to check for the existence of the pool
-                          members. Defaults to False, which is what you want
-                          for new pools that have had no members created yet.
-            """
-            for subset in subsets:
-                ports = subset['ports']
-                if 'addresses' not in subset:
-                    LOG.debug('Subset %s does not yet have addresses to '
-                              'process', subset)
-                    continue
-                addresses = subset['addresses']
-                # Create members for each combination of the address and the
-                # port.
-                for port in ports:
-                    protocol_port = port['port']
-                    for address in addresses:
-                        ip_address = address['ip']
-                        if reuse:
-                            members_response = yield from \
-                                self.sequential_delegate(
-                                    self.neutron.list_members, pool_id=pool_id,
-                                    address=ip_address,
-                                    protocol_port=protocol_port)
-                            members = members_response['members']
-                            if members:
-                                continue
-
-                        member_request = {
-                            'member': {
-                                'pool_id': pool_id,
-                                'address': ip_address,
-                                'protocol_port': protocol_port,
-                                'weight': 1,
-                            },
-                        }
-                        try:
-                            # Make sure the requests against Neutron API are
-                            # scheduled sequentially.
-                            member_response = yield from \
-                                self.sequential_delegate(
-                                    self.neutron.create_member, member_request)
-                            member = member_response['member']
-                            LOG.debug('Successfully created a new member '
-                                      '%(member)s for the pool %(pool_id)s',
-                                      {'member': member, 'pool_id': pool_id})
-                        except n_exceptions.NeutronClientException as ex:
-                            with excutils.save_and_reraise_exception():
-                                LOG.error(_LE('Error happend during creating '
-                                              'a Neutron loadbalancer pool '
-                                              'member: %s'), ex)
-
-        @asyncio.coroutine
         def get_pool(service_endpoint):
             """Gets the serialized pool information associated with a service.
 
@@ -979,7 +995,6 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
         event_type = decoded_json.get('type', '')
         content = decoded_json.get('object', {})
         metadata = content.get('metadata', {})
-        subsets = content.get('subsets', [])
 
         # FIXME(tfukushima): Ignore DELETED events for now.
         if event_type == DELETED_EVENT:
@@ -1006,11 +1021,34 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
                 yield from self.service_added.wait()
                 pool = yield from get_pool(service_endpoint)
             pool_id = pool['id']
-            # The pool member deletion is done by K8sServicesWatcher by
-            # deleting the associated pool that deletes its members in the
-            # cascaded way.
-            if event_type == ADDED_EVENT:
-                yield from create_pool_members(pool_id, subsets)
-            elif event_type == MODIFIED_EVENT:
-                # The pool members in subnets could be created already.
-                yield from create_pool_members(pool_id, subsets, reuse=True)
+            if event_type in (ADDED_EVENT, MODIFIED_EVENT):
+                endpoint_members = _get_endpoint_members(content.get('subsets',
+                                                                     ()))
+
+                members_response = yield from self.sequential_delegate(
+                    self.neutron.list_members, pool_id=pool_id)
+                pool_members = _get_pool_members(
+                    members_response.get('members', ()))
+
+                for member in (endpoint_members - pool_members):
+                    try:
+                        yield from _add_pool_member(self.sequential_delegate,
+                                                    self.neutron,
+                                                    pool_id,
+                                                    member.address,
+                                                    member.protocol_port)
+                    except n_exceptions.NeutronClientException as ex:
+                        with excutils.save_and_reraise_exception():
+                            LOG.error(_LE('Error happened creating a Neutron '
+                                          'loadbalancer pool member: %s'),
+                                      ex)
+                for member in (pool_members - endpoint_members):
+                    try:
+                        yield from _del_pool_member(self.sequential_delegate,
+                                                    self.neutron,
+                                                    member.uuid)
+                    except n_exceptions.NeutronClientException as ex:
+                        with excutils.save_and_reraise_exception():
+                            LOG.error(_LE('Error happened deleting a Neutron '
+                                          'loadbalancer pool member: %s'),
+                                      ex)
