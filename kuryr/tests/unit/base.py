@@ -9,8 +9,11 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations
 # under the License.
+import mock
 
-from neutronclient.tests.unit import test_cli20
+from mox3 import mox
+from neutronclient.v2_0 import client
+from oslotest import base
 
 from kuryr import app
 from kuryr import binding
@@ -18,7 +21,11 @@ from kuryr.common import constants as const
 from kuryr import utils
 
 
-class TestCase(test_cli20.CLITestV20Base):
+TOKEN = 'testtoken'
+ENDURL = 'localurl'
+
+
+class TestCase(base.BaseTestCase):
     """Test case base class for all unit tests."""
 
     def setUp(self):
@@ -26,7 +33,7 @@ class TestCase(test_cli20.CLITestV20Base):
         app.config['DEBUG'] = True
         app.config['TESTING'] = True
         self.app = app.test_client()
-        self.app.neutron = self.client
+        self.app.neutron = client.Client(token=TOKEN, endpoint_url=ENDURL)
 
 
 class TestKuryrBase(TestCase):
@@ -34,6 +41,9 @@ class TestKuryrBase(TestCase):
 
     def setUp(self):
         super(TestKuryrBase, self).setUp()
+        self.mox = mox.Mox()
+        self.addCleanup(mock.patch.stopall)
+
         self.app.neutron.format = 'json'
         self.addCleanup(self.mox.VerifyAll)
         self.addCleanup(self.mox.UnsetStubs)
