@@ -100,7 +100,7 @@ class Raven(service.Service):
         self._event_loop = asyncio.new_event_loop()
         self._event_loop.set_default_executor(self._executor)
         self._tasks = {}
-        self._reconnect = True
+        self._reconnect = True  # For unit testing purposes
         assert not self._event_loop.is_closed()
 
         self._lock = asyncio.Lock(loop=self._event_loop)
