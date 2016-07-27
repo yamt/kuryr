@@ -150,12 +150,12 @@ class Raven(service.Service):
             unique=False, name=router_name)
         if routers:
             router = routers[0]
-            LOG.debug('Reusing the existing router {0}'.format(router))
+            LOG.debug('Reusing the existing router %s', router)
         else:
             created_router_response = self.neutron.create_router(
                 {'router': {'name': router_name}})
             router = created_router_response['router']
-            LOG.debug('Created a new router {0}'.format(router))
+            LOG.debug('Created a new router %s', router)
 
         return router
 
@@ -165,7 +165,7 @@ class Raven(service.Service):
             name=constants.K8S_HARDCODED_SG_NAME)
         if sgs:
             sg = sgs[0]
-            LOG.debug('Reusing the existing SG {0}'.format(sg))
+            LOG.debug('Reusing the existing SG %s', sg)
         else:
             sg_response = self.neutron.create_security_group(
                 {'security_group':
@@ -182,9 +182,9 @@ class Raven(service.Service):
                 req = {
                     'security_group_rule': rule,
                 }
-                LOG.debug('Creating SG rule {0}'.format(req))
+                LOG.debug('Creating SG rule %s', req)
                 self.neutron.create_security_group_rule(req)
-            LOG.debug('Created a new default SG {0}'.format(sg))
+            LOG.debug('Created a new default SG %s', sg)
         self._default_sg = sg['id']
 
     def _construct_subnetpool(self, namespace_router):
@@ -264,14 +264,13 @@ class Raven(service.Service):
             unique=False, name=service_network_name)
         if service_networks:
             service_network = service_networks[0]
-            LOG.debug('Reusing the existing service network {0}'
-                      .format(service_network))
+            LOG.debug('Reusing the existing service network %s',
+                      service_network)
         else:
             service_network_response = self.neutron.create_network(
                 {'network': {'name': service_network_name}})
             service_network = service_network_response['network']
-            LOG.debug('Created a new service network {0}'
-                      .format(service_network))
+            LOG.debug('Created a new service network %s', service_network)
             self._service_network = service_network
 
         service_subnet_cidr = config.CONF.k8s.cluster_service_subnet
@@ -280,8 +279,7 @@ class Raven(service.Service):
             network_id=service_network['id'])
         if service_subnets:
             service_subnet = service_subnets[0]
-            LOG.debug('Reusing the existing service subnet {0}'
-                      .format(service_subnet))
+            LOG.debug('Reusing the existing service subnet %s', service_subnet)
         else:
             ip = netaddr.IPNetwork(service_subnet_cidr)
             new_service_subnet = {
@@ -294,8 +292,7 @@ class Raven(service.Service):
             service_subnet_response = self.neutron.create_subnet(
                 {'subnet': new_service_subnet})
             service_subnet = service_subnet_response['subnet']
-            LOG.debug('Created a new service subnet {0}'
-                      .format(service_subnet))
+            LOG.debug('Created a new service subnet %s', service_subnet)
         self._service_subnet = service_subnet
 
         neutron_service_network_id = service_network['id']
@@ -314,9 +311,8 @@ class Raven(service.Service):
             self.neutron.add_interface_router(
                 neutron_router_id, {'subnet_id': service_subnet_id})
         else:
-            LOG.debug('The cluster IP subnet {0} is already bound to the '
-                      'router.'
-                      .format(service_subnet_id))
+            LOG.debug('The cluster IP subnet %s is already bound to the '
+                      'router.', service_subnet_id)
 
     def _ensure_networking_base(self):
         self._create_default_security_group()
@@ -337,7 +333,7 @@ class Raven(service.Service):
 
     def restart(self):
         """Restarts Raven instance."""
-        LOG.debug('Restarted the service: {0}'.format(self.__class__.__name__))
+        LOG.debug('Restarted the service: %s', self.__class__.__name__)
         super(Raven, self).restart()
 
     def start(self):
@@ -355,10 +351,9 @@ class Raven(service.Service):
         Finally, Raven starts running the event loop until all tasks are
         completed.
         """
-        LOG.debug('Started the service: {0}'.format(self.__class__.__name__))
+        LOG.debug('Started the service: %s', self.__class__.__name__)
         super(Raven, self).start()
-        LOG.debug('Watched endpoints: {0}'
-                  .format(self.WATCH_ENDPOINTS_AND_CALLBACKS))
+        LOG.debug('Watched endpoints: %s', self.WATCH_ENDPOINTS_AND_CALLBACKS)
         self._ensure_networking_base()
 
         for endpoint, callback in self.WATCH_ENDPOINTS_AND_CALLBACKS.items():
@@ -373,8 +368,7 @@ class Raven(service.Service):
         try:
             self._event_loop.run_forever()
         except Exception as e:
-            LOG.error(_LE('Caught the exception in the event loop: {0}')
-                      .format(e))
+            LOG.error(_LE('Caught the exception in the event loop: %s'), e)
             LOG.error(traceback.format_exc())
             err_code = 1
         else:
@@ -401,11 +395,11 @@ class Raven(service.Service):
         self._event_loop.close()
 
         super(Raven, self).stop(graceful)
-        LOG.debug('Stopped the service: {0}'.format(self.__class__.__name__))
+        LOG.debug('Stopped the service: %s', self.__class__.__name__)
 
     def wait(self):
         """Waits for Raven to complete."""
-        LOG.debug('Wait for the service: {0}'.format(self.__class__.__name__))
+        LOG.debug('Wait for the service: %s', self.__class__.__name__)
         super(Raven, self).wait()
 
     @asyncio.coroutine
@@ -492,27 +486,25 @@ class Raven(service.Service):
         # Get headers
         status, reason, hdrs = yield from response.read_headers()
         if status != 200:
-            LOG.error(_LE('GET request to endpoint {} failed with status {} '
-                          'and reason {}').format(endpoint, status, reason))
+            LOG.error(_LE('GET request to endpoint %s failed with status %s '
+                          'and reason %s'), endpoint, status, reason)
             raise requests.exceptions.HTTPError('{}: {}. Endpoint {}'.format(
                 status, reason, endpoint))
         if hdrs.get(headers.TRANSFER_ENCODING) != 'chunked':
-            LOG.error(_LE('watcher GET request to endpoint {} is not chunked. '
-                          'headers: {}').format(endpoint, hdrs))
+            LOG.error(_LE('watcher GET request to endpoint %s is not chunked. '
+                          'headers: %s'), endpoint, hdrs)
             raise IOError('Can only watch endpoints that returned chunked '
                           'encoded transfers')
         while True:
             try:
                 content = yield from response.read_line()
             except asyncio.CancelledError:
-                LOG.debug(
-                    'Watch task of endpoint {} has been cancelled'.format(
-                        endpoint))
+                LOG.debug('Watch task of endpoint %s has been cancelled',
+                          endpoint)
                 break
             if content is None:
-                LOG.debug(
-                    'Watch task of endpoint {} has arrived at EOF'.format(
-                        endpoint))
+                LOG.debug('Watch task of endpoint %s has arrived at EOF',
+                          endpoint)
 
                 # Let's schedule another watch
                 if self._reconnect:

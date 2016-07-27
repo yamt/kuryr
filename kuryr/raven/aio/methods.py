@@ -81,7 +81,7 @@ class Response(object):
                     key, value = line.split(': ')
                     hdrs[key.upper()] = value
                 except ValueError:
-                    LOG.debug('Failed to read header: {0}'.format(line))
+                    LOG.debug('Failed to read header: %s', line)
             else:
                 break
             if self._reader.at_eof():
