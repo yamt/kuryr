@@ -516,6 +516,8 @@ class Raven(service.Service):
 
                 # Let's schedule another watch
                 if self._reconnect:
+                    LOG.debug('Scheduling a new watch task for endpoint %s',
+                              endpoint)
                     next_watch = self._event_loop.create_task(self.watch(
                         endpoint, callback))
                     next_watch.add_done_callback(self._task_done_callback)
