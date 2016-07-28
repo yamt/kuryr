@@ -85,6 +85,8 @@ class _FakeResponse(object):
         future.set_result(self._content)
         return future
 
+    read_all = read
+
 
 @asyncio.coroutine
 def _fake_get_response(responses):

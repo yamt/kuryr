@@ -980,7 +980,7 @@ class K8sEndpointsWatcher(K8sAPIWatcher):
                 endpoint=service_endpoint, loop=self._event_loop)
             status, _, _ = yield from service_response.read_headers()
             assert status == 200
-            service_response_body = yield from service_response.read()
+            service_response_body = yield from service_response.read_all()
             service = utils.utf8_json_decoder(service_response_body)
             service_metadata = service.get('metadata', {})
             service_annotations = service_metadata.get('annotations', {})

@@ -150,6 +150,26 @@ class Response(object):
             result = self.decoder(result)
         return result
 
+    @asyncio.coroutine
+    def read_all(self):
+        if self.headers.get(headers.TRANSFER_ENCODING) == 'chunked':
+            readings = []
+            while True:
+                read = yield from self.read_chunk()
+                if read is None:
+                    break
+                else:
+                    readings.append(read)
+            content = b''.join(readings)
+            if self.decoder is not None:
+                result = self.decoder(content)
+                self.decoded = result
+            else:
+                result = content
+        else:
+            result = yield from self.read()
+        return result
+
 
 @asyncio.coroutine
 def get(endpoint, decoder=None, loop=None):

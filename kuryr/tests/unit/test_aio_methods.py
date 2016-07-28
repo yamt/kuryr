@@ -229,3 +229,45 @@ class TestAIOMethods(base.TestKuryrBase, test_utils.TestCase):
         for got, expect in zip(lines, expected):
             self.assertEqual(expect, got)
         self.mox.VerifyAll()
+
+    @ddt.data(
+        (b'3c\r\nabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefgh'
+         b'\r\n3c\r\nijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklm'
+         b'nop\r\n3c\r\nqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqr'
+         b'stuvwx\r\n3c\r\nyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvw'
+         b'xyzabcdef\r\n3c\r\nghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzab'
+         b'cdefghijklmn\r\n3c\r\nopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefg'
+         b'hijklmnopqrstuv\r\n3c\r\nwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl'
+         b'mnopqrstuvwxyzabcd\r\n3c\r\nefghijklmnopqrstuvwxyzabcdefghijklmnopq'
+         b'rstuvwxyzabcdefghijkl\r\n20\r\nmnopqrstuvwxyzabcdefghijklmnopqr\r\n'
+         b'0\r\n\r\n',
+         b'abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefgh'
+         b'ijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnop'
+         b'qrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwx'
+         b'yzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdef'
+         b'ghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmn'
+         b'opqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv'
+         b'wxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcd'
+         b'efghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl'
+         b'mnopqrstuvwxyzabcdefghijklmnopqr',
+         {headers.TRANSFER_ENCODING: 'chunked'}),
+        (b'{\n  "origin": "104.196.131.79"\n}\n',
+         b'{\n  "origin": "104.196.131.79"\n}\n',
+         {headers.CONTENT_LENGTH: 33}))
+    @ddt.unpack
+    def test_response_read_all(self, data, expected, headers):
+        print(headers)
+        reader = streams.ChunkedStreamReader(loop=self.loop)
+        writer = self.mox.CreateMock(asyncio.StreamWriter)
+        writer.can_write_eof().AndReturn(True)
+        writer.write_eof()
+        writer.close()
+
+        reader.feed_data(data)
+        response = methods.Response(reader, writer)
+        response.headers = headers
+
+        self.mox.ReplayAll()
+        got = self.loop.run_until_complete(response.read_all())
+        self.assertEqual(got, expected)
+        self.mox.VerifyAll()
