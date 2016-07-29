@@ -134,8 +134,7 @@ class KuryrCNIK8sNeutronDriver(KuryrCNIDriver):
                 LOG.error(stderr)
         except exceptions.VethCreationFailure as ex:
             with excutils.save_and_reraise_exception():
-                LOG.error(_LE('Preparing the veth pair was failed: {0}.')
-                          .format(ex))
+                LOG.error(_LE('Failed to prepare the veth pair: %s.'), ex)
         except processutils.ProcessExecutionError:
             with excutils.save_and_reraise_exception():
                 LOG.error(_LE(

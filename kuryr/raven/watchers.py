@@ -856,7 +856,7 @@ class K8sServicesWatcher(K8sAPIWatcher):
                 except n_exceptions.NeutronClientException as ex:
                     with excutils.save_and_reraise_exception():
                         LOG.error(_LE("Error happened during deleting a"
-                                      " Neutron VIP: {0}").format(ex))
+                                      " Neutron VIP: %s"), ex)
                 LOG.debug('Successfully deleted the Neutron VIP %s',
                           neutron_vip)
 
@@ -869,9 +869,8 @@ class K8sServicesWatcher(K8sAPIWatcher):
                         yield from self.delegate(
                             self.neutron.delete_pool, pool_id)
                     else:
-                        LOG.warning(_LW("The pool {0} doesn't exist. Ignoring "
-                                        "the  deletion of the pool.")
-                                    .format(vip_id))
+                        LOG.warning(_LW("The pool %s doesn't exist. Ignoring "
+                                        "the  deletion of the pool."), vip_id)
                 except n_exceptions.NeutronClientException as ex:
                     with excutils.save_and_reraise_exception():
                         LOG.error(_LE("Error happened during deleting a"
