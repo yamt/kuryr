@@ -305,26 +305,150 @@ Running your first containers
 
 With all the cluster healthy, let's run our first containers::
 
-    $ kubectl run --image nginx --replicas 2 firstcontainers
-    deployment "firstcontainers" created
+    $ kubectl run --image nginx --replicas 2 my-nginx
+    deployment "my-nginx" created
 
 After a moment, they should show as running::
 
     $ kubectl get pods
-    NAME                               READY     STATUS    RESTARTS   AGE
-    firstcontainers-1830394127-mazlo   1/1       Running   0          24s
-    firstcontainers-1830394127-uyh8d   1/1       Running   0          24s
+    NAME                        READY     STATUS    RESTARTS   AGE
+    my-nginx-1830394127-mazlo   1/1       Running   0          24s
+    my-nginx-1830394127-uyh8d   1/1       Running   0          24s
 
 Once they is running, we can get their IPs::
 
-    $ kubectl exec firstcontainers-1830394127-mazlo -- ip -4 a show dev eth0
+    $ kubectl exec my-nginx-1830394127-mazlo -- ip -4 a show dev eth0
     15: eth0@if16: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
         inet 192.168.0.14/24 scope global eth0
            valid_lft forever preferred_lft forever
-    $ kubectl exec firstcontainers-1830394127-uyh8d -- ip -4 a show dev eth0
+    $ kubectl exec my-nginx-1830394127-uyh8d -- ip -4 a show dev eth0
     21: eth0@if22: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
         inet 192.168.0.6/24 scope global eth0
            valid_lft forever preferred_lft forever
 
 Having seen the ips, let's verify connectivity::
-    $ kubectl exec firstcontainers-1830394127-uyh8d ping 192.168.0.14
+    $ kubectl exec my-nginx-1830394127-uyh8d ping 192.168.0.14
+
+Exposing your services to the external world
+--------------------------------------------
+
+The containers deployed in the previous step are only accessible inside the Kubernetes
+cluster. To make them accessible to the outside world, you need to expose it using an
+external ip provided by Neutron.
+
+First from the ost-controller instance create a floating ip in the external network
+defined by neutron. To do so, first identify the appropiated network::
+
+    $ neutron net-list -c name -c router:external
+     +----------------------------+-----------------+
+     | name                       | router:external |
+     +----------------------------+-----------------+
+     | default                    | False           |
+     | kube-system                | False           |
+     | raven-default-service      | False           |
+     | mn-uplink-net              | False           |
+     | public                     | True            | <-- external network
+     | private                    | False           |
+     | raven-default-cluster-pool | False           |
+     +----------------------------+-----------------+
+
+Now request a floating ip from the external network::
+
+    $ neutron floating-ip-create public
+    Created a new floatingip:
+    +---------------------+--------------------------------------+
+    | Field               | Value                                |
+    +---------------------+--------------------------------------+
+    | description         |                                      |
+    | fixed_ip_address    |                                      |
+    | floating_ip_address | 172.24.4.5                           |
+    | floating_network_id | f4e34da7-1186-4ebf-9d23-cc02f1930d17 |
+    | id                  | e992bcc6-1fec-4be6-a677-d499ec770815 |
+    | port_id             |                                      |
+    | router_id           |                                      |
+    | status              | ACTIVE                               |
+    | tenant_id           | 3df6bffe3c754efeaeaab8d01b552e1c     |
+    +---------------------+--------------------------------------+
+
+In order of this floating ip to be associated with an ip from the Kubernetes cluster,
+it is necessary that the two networks to be reachable. Ensure the Kubernetes cluster's
+router has a link to the external network::
+
+    $ neutron router-list
+    +--------------------------+----------------------+---------------------------+
+    | id                       | name                 | external_gateway_info     |
+    +--------------------------+----------------------+---------------------------+
+    | a35a04af-fe2b-           | raven-default-router | {"network_id":            |
+    | 48a2-9c05-1b99713eea63   |                      | "f4e34da7-1186-4ebf-      |
+    |                          |                      | 9d23-cc02f1930d17",       |
+    |                          |                      | "enable_snat": true,      |
+    |                          |                      | "external_fixed_ips":     |
+    |                          |                      | [{"subnet_id": "9f9600d3- |
+    |                          |                      | 30f1-4c29-8df5-0f7fb54289 |
+    |                          |                      | 1d", "ip_address":        |
+    |                          |                      | "172.24.4.2"}]}           |
+    +--------------------------+----------------------+---------------------------+
+
+If the external_gateway_info shown is null, you must create a link to the public
+network::
+    $ neutron router-set-gateway raven-default-router public
+
+Now, from the k8s-controller instance, create a service to expose the pods and associate
+the floating ip obtained from Neutron::
+
+    $ kubectl expose deployment my-nginx --external-ip 172.24.4.5 --port=80
+    service "my-nginx" exposed
+
+    $ kubectl get services my-nginx
+    kubectl get services
+    NAME         CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+    my-nginx     10.0.0.137   172.24.4.5    80/TCP    11s
+
+The service should now be accessible from the ost-controller instance::
+
+   $ wget 172.24.4.5 -nv --method=HEAD
+     2016-07-27 13:42:36 URL: http://172.24.4.9/ 200 OK
+
+
+Manual service expossure
+------------------------
+
+Find the neutron VIP associated with the service::
+
+    $ neutron lb-vip-list -c id -c name -c address
+
+    +--------------------------------------+------------+------------+
+    | id                                   | name       | address    |
+    +--------------------------------------+------------+------------+
+    | a42a0857-becb-435f-89f5-2ba5635dfee9 | my-nginx   | 10.0.0.218 |
+    | b8c0b52a-bfd8-4116-a4f3-d923c0a4faf2 | my-nginx-2 | 10.0.0.98  |
+    | df994074-e3a3-4460-a863-e58ad6ed0d1f | my-nginx-3 | 10.0.0.177 |
+    +--------------------------------------+------------+------------+
+
+Find the port id for the VIP::
+
+    $ neutron lb-vip-show a42a0857-becb-435f-89f5-2ba5635dfee9
+    +---------------------+--------------------------------------+
+    | Field               | Value                                |
+    +---------------------+--------------------------------------+
+    | address             | 10.0.0.218                           |
+    | admin_state_up      | True                                 |
+    | connection_limit    | -1                                   |
+    | description         |                                      |
+    | id                  | a42a0857-becb-435f-89f5-2ba5635dfee9 |
+    | name                | my-nginx                             |
+    | pool_id             | 84b7fbec-836a-40e2-a629-2c98cb86bbf1 |
+    | port_id             | 52275b78-2eaa-49f0-be4b-5c23f4ee9188 |
+    | protocol            | TCP                                  |
+    | protocol_port       | 80                                   |
+    | session_persistence |                                      |
+    | status              | ACTIVE                               |
+    | status_description  |                                      |
+    | subnet_id           | f1ea012f-88e7-4901-8258-0ccaafa528f0 |
+    | tenant_id           | 3df6bffe3c754efeaeaab8d01b552e1c     |
+    +---------------------+--------------------------------------+
+
+Assign the floating ip to the vip::
+
+    $ neutron floatingip-associate e992bcc6-1fec-4be6-a677-d499ec770815 \
+      52275b78-2eaa-49f0-be4b-5c23f4ee9188
