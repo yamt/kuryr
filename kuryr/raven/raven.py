@@ -486,13 +486,15 @@ class Raven(service.Service):
         # Get headers
         status, reason, hdrs = yield from response.read_headers()
         if status != 200:
-            LOG.error(_LE('GET request to endpoint %s failed with status %s '
-                          'and reason %s'), endpoint, status, reason)
+            LOG.error(_LE('GET request to endpoint %(ep)s failed with '
+                          'status %(status)s and reason %(reason)s'),
+                      {'ep': endpoint, 'status': status, 'reason': reason})
             raise requests.exceptions.HTTPError('{}: {}. Endpoint {}'.format(
                 status, reason, endpoint))
         if hdrs.get(headers.TRANSFER_ENCODING) != 'chunked':
-            LOG.error(_LE('watcher GET request to endpoint %s is not chunked. '
-                          'headers: %s'), endpoint, hdrs)
+            LOG.error(_LE('watcher GET request to endpoint %(ep)s is not '
+                          'chunked. headers: %(hdrs)s'),
+                      {'ep': endpoint, 'hdrs': hdrs})
             raise IOError('Can only watch endpoints that returned chunked '
                           'encoded transfers')
         while True:
