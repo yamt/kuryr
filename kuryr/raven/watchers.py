@@ -375,6 +375,10 @@ class K8sPodsWatcher(K8sAPIWatcher):
                     try:
                         yield from self.delegate(
                             self.neutron.delete_port, port_id)
+                    except n_exceptions.PortNotFoundClient:
+                        LOG.info(_LI('Neutron port %s had already been '
+                                     'deleted. Nothing remaining to do'),
+                                 port_id)
                     except n_exceptions.NeutronClientException as ex:
                         with excutils.save_and_reraise_exception():
                             LOG.error(_LE("Error happend during deleting a"
