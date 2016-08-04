@@ -14,3 +14,5 @@ Developer Docs
     :maxdepth: 1
 
     contribute
+    install-guide
+
