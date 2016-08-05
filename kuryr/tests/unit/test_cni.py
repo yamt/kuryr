@@ -107,7 +107,7 @@ class TestNeutronCNIDriver(base.TestKuryrBase):
         tenant_id = '39dd23d1-7d7c-4586-a105-bc6f84f9a769'
         port_id = '7a12ebf0-ed19-4819-94cd-150acf9f5c1f'
 
-        net = ipaddress.ip_network(config.CONF.k8s.cluster_vip_subnet)
+        net = ipaddress.ip_network(config.CONF.k8s.cluster_external_subnet)
         gateway_ip = str(next(net.hosts()))
         first_ip = str(next(net.hosts()))
 

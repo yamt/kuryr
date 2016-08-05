@@ -127,7 +127,7 @@ k8s_opts = [
                    'SUBNET_POOL', '192.168.0.0/16')),
     # NOTE(tfukushima): FLANNEL_NET is used in the deployment scripts.
     #   https://github.com/kubernetes/kubernetes/search?utf8=%E2%9C%93&q=flannel_net  # noqa
-    cfg.StrOpt('cluster_vip_subnet',
+    cfg.StrOpt('cluster_external_subnet',
                default=os.environ.get(
                    'FLANNEL_NET', '172.16.0.0/16')),
     # NOTE(tfukushima): SERVICE_CLUSTER_IP_RANGE is used in the deployment

@@ -155,6 +155,7 @@ class K8sBaseTest(base.BaseTestCase):
         annotations = service.obj['metadata']['annotations']
         self.assertIn(constants.K8S_ANNOTATION_VIP_KEY,
                       annotations)
+
         vip_annotation = jsonutils.loads(
             annotations[constants.K8S_ANNOTATION_VIP_KEY])
 
@@ -174,6 +175,41 @@ class K8sBaseTest(base.BaseTestCase):
         members = self.neutron.list_members(
             vip_annotation['pool_id'])['members']
         self.assertEqual(len(members), num_members)
+
+    def assertNeutronFloatingIP(self, service, fip):
+        self.assertIn('annotations', service.obj['metadata'])
+        annotations = service.obj['metadata']['annotations']
+        self.assertIn(constants.K8S_ANNOTATION_VIP_KEY,
+                      annotations)
+        vip_annotation = jsonutils.loads(
+            annotations[constants.K8S_ANNOTATION_VIP_KEY])
+        self.assertIn(constants.K8S_ANNOTATION_FIP_KEY,
+                      annotations)
+
+        # Confirm that there is a floating ip
+        neutron_fip = self.neutron.list_floatingips(
+            floating_ip_address=fip)['floatingips']
+        self.assertTrue(neutron_fip)
+
+        # Confirm that the floating ip is associated to
+        # the service port
+        neutron_vip_port = self.neutron.list_ports(
+            id=neutron_fip[0]['port_id'])['ports']
+        self.assertTrue(neutron_vip_port)
+        ips = [fix_ip for fix_ip in neutron_vip_port[0]['fixed_ips']
+               if fix_ip['ip_address'] == vip_annotation['address']]
+        self.assertTrue(ips)
+
+    def assertNotNeutronFloatingIP(self, service, fip):
+        self.assertIn('annotations', service.obj['metadata'])
+        annotations = service.obj['metadata']['annotations']
+        self.assertIn(constants.K8S_ANNOTATION_VIP_KEY,
+                      annotations)
+
+        # Confirm that there is not a floating ip
+        neutron_fip = self.neutron.list_floatingips(
+            floating_ip_address=fip)['floatingips']
+        self.assertFalse(neutron_fip)
 
     def _get_neutron_client(self):
         """Get neutron client.

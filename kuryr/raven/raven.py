@@ -153,7 +153,10 @@ class Raven(service.Service):
             LOG.debug('Reusing the existing router %s', router)
         else:
             created_router_response = self.neutron.create_router(
-                {'router': {'name': router_name}})
+                {'router': {'name': router_name,
+                            'external_gateway_info': {
+                                'network_id':
+                                self._external_service_network['id']}}})
             router = created_router_response['router']
             LOG.debug('Created a new router %s', router)
 
@@ -204,43 +207,40 @@ class Raven(service.Service):
             subnetpool = subnetpool_response['subnetpool']
         self._subnetpool = subnetpool
 
-    def _construct_cluster_network(self, namespace_router):
-        network_name = HARDCODED_NET_NAME + '-cluster-pool'
-        subnet_name = HARDCODED_NET_NAME + '-cluster-pool-subnet'
+    def _construct_external_service_network(self):
+        network_name = HARDCODED_NET_NAME + '-external-net'
+        subnet_name = HARDCODED_NET_NAME + '-external-subnet'
         networks = controllers._get_networks_by_attrs(name=network_name)
         if networks:
-            self._cluster_network = networks[0]
+            self._external_service_network = networks[0]
         else:
             network_response = self.neutron.create_network(
-                {'network': {'name': network_name}})
-            self._cluster_network = network_response['network']
+                {'network': {'name': network_name, 'router:external': True}})
+            self._external_service_network = network_response['network']
             LOG.debug('Created a new cluster network %s',
-                self._cluster_network)
+                      self._external_service_network)
 
         # Ensure the subnet exists
         subnets = controllers._get_subnets_by_attrs(
             name=subnet_name,
-            network_id=self._cluster_network['id'])
+            network_id=self._external_service_network['id'])
         if subnets:
-            self._cluster_subnet = subnets[0]
+            self._external_service_subnet = subnets[0]
         else:
             subnet_range = ipaddress.ip_network(
-                config.CONF.k8s.cluster_vip_subnet)
+                config.CONF.k8s.cluster_external_subnet)
             new_subnet = {
                 'name': subnet_name,
-                'network_id': self._cluster_network['id'],
+                'network_id': self._external_service_network['id'],
                 'ip_version': subnet_range.version,
                 'cidr': str(subnet_range),
                 'enable_dhcp': False
             }
             subnet_response = self.neutron.create_subnet(
                 {'subnet': new_subnet})
-            self._cluster_subnet = subnet_response['subnet']
-            LOG.debug('Created a new cluster subnet %s', self._cluster_subnet)
-
-        self._ensure_router_port(
-            self._cluster_network['id'],
-            self._cluster_subnet['id'])
+            self._external_service_subnet = subnet_response['subnet']
+            LOG.debug('Created a new external cluster subnet %s',
+                      self._external_service_subnet)
 
     def _ensure_router_port(self, port_network_id, port_subnet_id):
 
@@ -317,11 +317,11 @@ class Raven(service.Service):
     def _ensure_networking_base(self):
         self._create_default_security_group()
 
+        self._construct_external_service_network()
         router = self._get_or_create_service_router()
         self._router = router
 
         self._construct_subnetpool(router)
-        self._construct_cluster_network(router)
         self._construct_service_network(router)
 
     def _task_done_callback(self, task):
